@@ -291,11 +291,19 @@ function RowBar({ row, allocations, preview, buyerStats, colorMode = "allocation
   const W = 520;
   const H = 100;
 
-  // Get pillar gap after segment (diameter = 2 * radius)
-  function pillarGapAfterSegmentCm(segmentIndex) {
+  // ✅ pillar gap = pillar DIAMETER (not radius)
+  // Backward compat rules:
+  // - if diameterCm exists -> use it
+  // - else if radiusCm >= 40 -> assume you saved diameter in radiusCm (like 60)
+  // - else diameter = 2 * radiusCm
+  function pillarDiameterAfterSegmentCm(segmentIndex) {
     if (row?.type !== "segmented") return 0;
     const p = (row.pillars || []).find((x) => n(x.atSegmentBoundaryIndex) === n(segmentIndex));
-    return 2 * n(p?.radiusCm); // 2 * 10 = 20cm gap
+    const d = n(p?.diameterCm);
+    const r = n(p?.radiusCm);
+    if (d > 0) return d;
+    if (r <= 0) return 0;
+    return r >= 40 ? r : 2 * r;
   }
 
   const segs =
@@ -303,22 +311,21 @@ function RowBar({ row, allocations, preview, buyerStats, colorMode = "allocation
       ? [{ segmentIndex: 0, lengthCm: n(row.lengthCm) }]
       : (row.segments || []).map((s, i) => ({ segmentIndex: i, lengthCm: n(s.lengthCm) }));
 
-  // Build parts: [segment][pillar gap][segment][pillar gap]...
+  // ✅ Build physical parts: [segment][pillar gap][segment]...
   const parts = [];
   for (let i = 0; i < segs.length; i++) {
     parts.push({ type: "segment", segmentIndex: segs[i].segmentIndex, lengthCm: segs[i].lengthCm });
     if (row.type === "segmented" && i < segs.length - 1) {
-      const gap = pillarGapAfterSegmentCm(i);
+      const gap = pillarDiameterAfterSegmentCm(i); // ✅ diameter gap
       if (gap > 0) parts.push({ type: "pillar", boundaryIndex: i, lengthCm: gap });
     }
   }
 
-  // Total physical length includes pillar gaps
   const totalPhysicalLen = parts.reduce((sum, p) => sum + n(p.lengthCm), 0);
   const safeTotalLen = totalPhysicalLen > 0 ? totalPhysicalLen : 1;
   const sx = (cm) => (n(cm) / safeTotalLen) * W;
 
-  // Layout parts
+  // ✅ Layout parts in px + cm ranges
   let xCursor = 0;
   let cmCursor = 0;
 
@@ -356,7 +363,10 @@ function RowBar({ row, allocations, preview, buyerStats, colorMode = "allocation
   }
 
   const baseTip = rowHoverText({ row, allocations, buyerStats });
-  const clipId = `clip-${String(row._id || row.name).replace(/\s+/g, "-")}`;
+
+  const clipRowId = `clip-row-${String(row._id || row.name).replace(/\s+/g, "-")}`;
+  const clipSegId = `clip-segs-${String(row._id || row.name).replace(/\s+/g, "-")}`;
+
   const blocks = allocBlocksFromAllocations(allocations);
 
   const previewBlocks = Array.isArray(preview?.segmentsMeta)
@@ -367,91 +377,65 @@ function RowBar({ row, allocations, preview, buyerStats, colorMode = "allocation
       }))
     : [];
 
+  const y = 15;
+  const h = 55;
+
   return (
     <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="w-full">
       <defs>
-        <clipPath id={clipId}>
-          <rect x="0" y="15" width={W} height="55" rx="12" />
+        {/* Clip whole bar (rounded) */}
+        <clipPath id={clipRowId}>
+          <rect x="0" y={y} width={W} height={h} rx="12" />
         </clipPath>
+
+        {/* ✅ Clip ONLY segments (excludes pillar gaps) */}
+        <clipPath id={clipSegId}>
+          {segmentRects.map((r) => (
+            <rect key={`c-${r.segmentIndex}`} x={r.segX} y={y} width={r.segW} height={h} />
+          ))}
+        </clipPath>
+
         <linearGradient id="segmentGradient" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#f8fafc" />
-          <stop offset="100%" stopColor="#e2e8f0" />
+          <stop offset="0%" stopColor="#ffffff" />
+          <stop offset="100%" stopColor="#f1f5f9" />
         </linearGradient>
+
+        <radialGradient id="pillarGrad" cx="35%" cy="30%" r="70%">
+          <stop offset="0%" stopColor="#ffffff" stopOpacity="1" />
+          <stop offset="55%" stopColor="#cbd5e1" stopOpacity="1" />
+          <stop offset="100%" stopColor="#64748b" stopOpacity="1" />
+        </radialGradient>
+
+        <pattern id="pillarHatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+          <line x1="0" y1="0" x2="0" y2="8" stroke="#0f172a" strokeOpacity="0.2" strokeWidth="2" />
+        </pattern>
       </defs>
 
-      {/* Base row with gradient */}
-      <rect x="0" y="15" width={W} height="55" fill="url(#segmentGradient)" stroke="#334155" strokeWidth="2" rx="12">
+      {/* Base outer */}
+      <rect x="0" y={y} width={W} height={h} fill="url(#segmentGradient)" stroke="#0f172a" strokeWidth="2" rx="12">
         <title>{baseTip}</title>
       </rect>
 
-      {/* Segment regions */}
+      {/* Segment backgrounds + borders */}
       {segmentRects.map((r, i) => {
         const bg = colorFromKey(`seg-${i}`);
-        const tip = [
-          `📦 Segment ${i + 1}`,
-          `Length: ${r.segLen} cm`,
-          `Position: ${r.startCm.toFixed(1)} → ${r.endCm.toFixed(1)} cm`,
-        ].join("\n");
+        const tip = [`📦 Segment ${i + 1}`, `Length: ${r.segLen} cm`, `Position: ${r.startCm} → ${r.endCm} cm`].join("\n");
 
         return (
           <g key={`seg-${r.segmentIndex}-${i}`}>
-            <rect
-              x={r.segX}
-              y="15"
-              width={r.segW}
-              height="55"
-              fill={bg}
-              opacity="0.08"
-              clipPath={`url(#${clipId})`}
-            >
+            <rect x={r.segX} y={y} width={r.segW} height={h} fill={bg} opacity="0.10" clipPath={`url(#${clipRowId})`}>
               <title>{tip}</title>
             </rect>
-            <rect x={r.segX} y="15" width={r.segW} height="55" fill="transparent" stroke="#94a3b8" strokeWidth="1" />
-            <text x={r.segX + r.segW / 2} y="47" textAnchor="middle" fontSize="11" fontWeight="600" fill="#475569">
+            <rect x={r.segX} y={y} width={r.segW} height={h} fill="transparent" stroke="#94a3b8" strokeWidth="1" />
+            <text x={r.segX + r.segW / 2} y={y + h / 2 + 4} textAnchor="middle" fontSize="11" fontWeight="700" fill="#334155">
               {r.segLen} cm
             </text>
           </g>
         );
       })}
 
-      {/* Pillar gap regions */}
-      {pillarRects.map((p) => {
-        const tip = [
-          `⚫ Pillar Gap`,
-          `Gap: ${p.gapCm} cm`,
-          `Position: ${p.startCm.toFixed(1)} → ${p.endCm.toFixed(1)} cm`,
-        ].join("\n");
-        const cx = p.x + p.w / 2;
-        const rPx = Math.max(6, Math.min(14, p.w / 2.5));
-
-        return (
-          <g key={`pillar-${p.boundaryIndex}`}>
-            <rect x={p.x} y="15" width={p.w} height="55" fill="#1e293b" opacity="0.12" clipPath={`url(#${clipId})`}>
-              <title>{tip}</title>
-            </rect>
-            <rect
-              x={p.x}
-              y="15"
-              width={p.w}
-              height="55"
-              fill="transparent"
-              stroke="#64748b"
-              strokeWidth="1"
-              strokeDasharray="4 3"
-            />
-            <circle cx={cx} cy="42.5" r={rPx} fill="#1e293b" opacity="0.4">
-              <title>{tip}</title>
-            </circle>
-            <circle cx={cx} cy="42.5" r={rPx - 2} fill="none" stroke="#64748b" strokeWidth="1.5" />
-            <text x={cx} y="82" textAnchor="middle" fontSize="9" fill="#64748b" fontWeight="600">
-              {p.gapCm}cm
-            </text>
-          </g>
-        );
-      })}
-
-      {/* Saved allocations */}
-      <g clipPath={`url(#${clipId})`}>
+      {/* ✅ Allocations clipped ONLY to segments (so NEVER shows inside pillar gap) */}
+      <g clipPath={`url(#${clipSegId})`}>
         {blocks.map((b) => {
           const x = sx(b.start);
           const w = sx(b.len);
@@ -475,12 +459,12 @@ function RowBar({ row, allocations, preview, buyerStats, colorMode = "allocation
             <rect
               key={b.key}
               x={x}
-              y="15"
+              y={y}
               width={w}
-              height="55"
+              height={h}
               fill={colorFromKey(fillKey)}
-              opacity="0.45"
-              className="hover:opacity-60 transition-opacity cursor-pointer"
+              opacity="0.48"
+              className="hover:opacity-65 transition-opacity cursor-pointer"
             >
               <title>{tip}</title>
             </rect>
@@ -488,22 +472,54 @@ function RowBar({ row, allocations, preview, buyerStats, colorMode = "allocation
         })}
       </g>
 
-      {/* Preview overlay */}
-      <g clipPath={`url(#${clipId})`}>
+      {/* ✅ Preview overlay clipped ONLY to segments */}
+      <g clipPath={`url(#${clipSegId})`}>
         {previewBlocks.map((p) => {
           const x = sx(p.start);
           const w = sx(p.len);
           if (w <= 0) return null;
           return (
-            <rect key={p.key} x={x} y="15" width={w} height="55" fill="#ef4444" opacity="0.3">
+            <rect key={p.key} x={x} y={y} width={w} height={h} fill="#ef4444" opacity="0.28">
               <title>🔴 Preview (not saved yet)</title>
             </rect>
           );
         })}
       </g>
 
-      <text x="10" y="94" fontSize="10" fill="#64748b" fontWeight="500">
-        💡 Hover for details | Colors = allocations | Red = preview | Dashed = pillar gap
+      {/* ✅ Pillar gaps drawn ON TOP (fully separate & clean) */}
+      {pillarRects.map((p) => {
+        const tip = [`⚫ Pillar (blocked)`, `Diameter: ${p.gapCm} cm`, `Position: ${p.startCm} → ${p.endCm} cm`].join("\n");
+
+        const cx = p.x + p.w / 2;
+        const cy = y + h / 2;
+
+        // big circle that fits inside gap
+        const rPx = Math.max(10, Math.min(h / 2 - 4, p.w / 2 - 4));
+
+        return (
+          <g key={`pillar-${p.boundaryIndex}`}>
+            {/* gap area (opaque so it looks EMPTY/blocked, not mixed with colors) */}
+            <rect x={p.x} y={y} width={p.w} height={h} fill="#ffffff" />
+            <rect x={p.x} y={y} width={p.w} height={h} fill="url(#pillarHatch)" opacity="0.45" />
+            <rect x={p.x} y={y} width={p.w} height={h} fill="transparent" stroke="#64748b" strokeWidth="1.5" strokeDasharray="6 4">
+              <title>{tip}</title>
+            </rect>
+
+            {/* big pillar */}
+            <circle cx={cx} cy={cy} r={rPx} fill="url(#pillarGrad)" stroke="#0f172a" strokeOpacity="0.55" strokeWidth="2">
+              <title>{tip}</title>
+            </circle>
+
+            {/* label */}
+            <text x={cx} y={y + 14} textAnchor="middle" fontSize="10" fill="#0f172a" fontWeight="800">
+              {p.gapCm}cm
+            </text>
+          </g>
+        );
+      })}
+
+      <text x="10" y="94" fontSize="10" fill="#64748b" fontWeight="600">
+        💡 Hover for details | Colors = allocations | Red = preview | Pillar gap = blocked (no fill allowed)
       </text>
     </svg>
   );
