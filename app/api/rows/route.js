@@ -26,9 +26,9 @@ async function seedRowsIfEmpty() {
         maxHeightCm: 213,
         segments: [{ lengthCm: 353 }, { lengthCm: 548 }, { lengthCm: 548 }, { lengthCm: 323 }],
         pillars: [
-          { atSegmentBoundaryIndex: 0, radiusCm: 60 },
-          { atSegmentBoundaryIndex: 1, radiusCm: 60 },
-          { atSegmentBoundaryIndex: 2, radiusCm: 60 },
+          { atSegmentBoundaryIndex: 0, radiusCm: 32 },
+          { atSegmentBoundaryIndex: 1, radiusCm: 32 },
+          { atSegmentBoundaryIndex: 2, radiusCm: 32 },
         ],
       },
     ]);
