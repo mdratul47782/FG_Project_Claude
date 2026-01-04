@@ -1,8 +1,25 @@
-//app/fgComponents/FGEntryForm.jsx
+// app/fgComponents/FGEntryForm.jsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
 import GraphicalPane from "./GraphicalPane";
+import {
+  Building2,
+  Warehouse,
+  UserRound,
+  LayoutGrid,
+  CalendarDays,
+  Hash,
+  Shirt,
+  Tag,
+  Package,
+  Ruler,
+  Layers,
+  Save,
+  RotateCcw,
+  AlertCircle,
+  CheckCircle2,
+} from "lucide-react";
 
 const BUYERS = [
   "Decathlon - knit",
@@ -29,7 +46,7 @@ const mockAuth = {
 };
 
 export default function FGEntryForm() {
-  const [floor, setFloor] = useState(mockAuth.assigned_building);
+  const [floor] = useState(mockAuth.assigned_building);
   const [warehouse, setWarehouse] = useState("B1");
   const [buyer, setBuyer] = useState(BUYERS[0]);
 
@@ -51,7 +68,7 @@ export default function FGEntryForm() {
   const [h, setH] = useState(0);
   const [fobPerPcs, setFobPerPcs] = useState(0);
 
-  // ✅ NEW: Manual orientation controls
+  // Manual orientation controls
   const [manualOrientation, setManualOrientation] = useState("LENGTH_WISE");
   const [manualAcross, setManualAcross] = useState(2);
 
@@ -128,7 +145,6 @@ export default function FGEntryForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rowId, buyer, cartonQty, w, l, h, manualOrientation, manualAcross]);
 
-  // ✅ Reset form function
   function resetForm() {
     setSeason("");
     setPoNumber("");
@@ -174,11 +190,11 @@ export default function FGEntryForm() {
           cartonDimCm: { w: n(w), l: n(l), h: n(h) },
           fobPerPcs: n(fobPerPcs),
           status: "DRAFT",
-          // ✅ Auth info
           factory: mockAuth.factory,
           assigned_building: mockAuth.assigned_building,
         }),
       });
+
       const entryData = await entryRes.json();
       if (!entryData.ok) throw new Error(entryData.message || "Entry save failed");
 
@@ -193,51 +209,78 @@ export default function FGEntryForm() {
           manualAcross: n(manualAcross),
         }),
       });
+
       const allocData = await allocRes.json();
       if (!allocData.ok) throw new Error(allocData.message || "Allocation save failed");
 
       alert(
-        `✅ Saved Successfully!\n\nEntry: ${entryData.entry.code}\nRow: ${preview.rowName}\nOrientation: ${manualOrientation}\nAcross: ${manualAcross}\nStart: ${preview.metrics.rowStartAtCm}cm\nEnd: ${preview.metrics.rowEndAtCm}cm\nRemaining: ${preview.metrics.rowRemainingAfterCm}cm`
+        `Saved!\nEntry: ${entryData.entry.code}\nRow: ${preview.rowName}\nStart: ${preview.metrics.rowStartAtCm}cm\nEnd: ${preview.metrics.rowEndAtCm}cm\nRemaining: ${preview.metrics.rowRemainingAfterCm}cm`
       );
 
-      // ✅ Reset form after successful save
       resetForm();
       await loadPreview();
     } catch (e) {
-      alert("❌ Error: " + e.message);
+      alert("Error: " + e.message);
     } finally {
       setSaving(false);
     }
   }
 
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "start" }}>
-      {/* LEFT - Form */}
-      <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 16 }}>
-        <h2 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12 }}>📝 Entry Form</h2>
+  const canSave = !!preview?.rowId && !saving;
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
-          <Field label="Floor (auto)">
-            <input value={floor} onChange={(e) => setFloor(e.target.value)} disabled />
+  return (
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      {/* LEFT */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-extrabold text-slate-900">Entry Form</h2>
+            <p className="mt-1 text-xs text-slate-500">
+              Fill details, choose row, set orientation, and preview placement.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+            <Building2 className="h-4 w-4 text-slate-700" />
+            <div className="text-xs">
+              <div className="font-semibold text-slate-900">{mockAuth.assigned_building}</div>
+              <div className="text-slate-500">Factory: {mockAuth.factory}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Form grid */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field icon={Building2} label="Floor (auto)">
+            <input className="input" value={floor} disabled />
           </Field>
 
-          <Field label="Warehouse">
-            <select value={warehouse} onChange={(e) => { setWarehouse(e.target.value); setRowId(""); }}>
+          <Field icon={Warehouse} label="Warehouse">
+            <select
+              className="input"
+              value={warehouse}
+              onChange={(e) => {
+                setWarehouse(e.target.value);
+                setRowId("");
+              }}
+            >
               <option value="B1">B1</option>
               <option value="B2">B2</option>
             </select>
           </Field>
 
-          <Field label="Buyer">
-            <select value={buyer} onChange={(e) => setBuyer(e.target.value)}>
+          <Field icon={UserRound} label="Buyer">
+            <select className="input" value={buyer} onChange={(e) => setBuyer(e.target.value)}>
               {BUYERS.map((b) => (
-                <option key={b} value={b}>{b}</option>
+                <option key={b} value={b}>
+                  {b}
+                </option>
               ))}
             </select>
           </Field>
 
-          <Field label="Choose Row">
-            <select value={rowId} onChange={(e) => setRowId(e.target.value)}>
+          <Field icon={LayoutGrid} label="Choose Row">
+            <select className="input" value={rowId} onChange={(e) => setRowId(e.target.value)}>
               {rows.map((r) => (
                 <option key={r._id} value={r._id}>
                   {r.name} ({r.type === "continuous" ? `${r.lengthCm}cm` : "segmented"})
@@ -246,47 +289,104 @@ export default function FGEntryForm() {
             </select>
           </Field>
 
-          <Field label="Season"><input value={season} onChange={(e) => setSeason(e.target.value)} /></Field>
-          <Field label="PO Number"><input value={poNumber} onChange={(e) => setPoNumber(e.target.value)} /></Field>
-          <Field label="Style"><input value={style} onChange={(e) => setStyle(e.target.value)} /></Field>
-          <Field label="Model"><input value={model} onChange={(e) => setModel(e.target.value)} /></Field>
-          <Field label="Item"><input value={item} onChange={(e) => setItem(e.target.value)} /></Field>
-          <Field label="Color"><input value={color} onChange={(e) => setColor(e.target.value)} /></Field>
-          <Field label="Size"><input value={size} onChange={(e) => setSize(e.target.value)} /></Field>
+          <Field icon={CalendarDays} label="Season">
+            <input className="input" value={season} onChange={(e) => setSeason(e.target.value)} />
+          </Field>
 
-          <Field label="Pcs per Carton"><input type="number" value={pcsPerCarton} onChange={(e) => setPcsPerCarton(e.target.value)} /></Field>
-          <Field label="Carton Qty"><input type="number" value={cartonQty} onChange={(e) => setCartonQty(e.target.value)} /></Field>
+          <Field icon={Hash} label="PO Number">
+            <input className="input" value={poNumber} onChange={(e) => setPoNumber(e.target.value)} />
+          </Field>
 
-          <Field label="Carton W (cm)"><input type="number" value={w} onChange={(e) => setW(e.target.value)} /></Field>
-          <Field label="Carton L (cm)"><input type="number" value={l} onChange={(e) => setL(e.target.value)} /></Field>
-          <Field label="Carton H (cm)"><input type="number" value={h} onChange={(e) => setH(e.target.value)} /></Field>
+          <Field icon={Shirt} label="Style">
+            <input className="input" value={style} onChange={(e) => setStyle(e.target.value)} />
+          </Field>
 
-          <Field label="FOB (per pcs)"><input type="number" value={fobPerPcs} onChange={(e) => setFobPerPcs(e.target.value)} /></Field>
+          <Field icon={Tag} label="Model">
+            <input className="input" value={model} onChange={(e) => setModel(e.target.value)} />
+          </Field>
 
-          {/* ✅ NEW: Orientation Controls */}
-          <Field label="🔄 Carton Orientation">
-            <select value={manualOrientation} onChange={(e) => setManualOrientation(e.target.value)}>
-              <option value="LENGTH_WISE">Length-wise (L along row depth)</option>
-              <option value="WIDTH_WISE">Width-wise (W along row depth)</option>
+          <Field icon={Package} label="Item">
+            <input className="input" value={item} onChange={(e) => setItem(e.target.value)} />
+          </Field>
+
+          <Field icon={Tag} label="Color">
+            <input className="input" value={color} onChange={(e) => setColor(e.target.value)} />
+          </Field>
+
+          <Field icon={Tag} label="Size">
+            <input className="input" value={size} onChange={(e) => setSize(e.target.value)} />
+          </Field>
+
+          <Field icon={Package} label="Pcs per Carton">
+            <input
+              className="input"
+              type="number"
+              value={pcsPerCarton}
+              onChange={(e) => setPcsPerCarton(e.target.value)}
+            />
+          </Field>
+
+          <Field icon={Package} label="Carton Qty">
+            <input
+              className="input"
+              type="number"
+              value={cartonQty}
+              onChange={(e) => setCartonQty(e.target.value)}
+            />
+          </Field>
+
+          <Field icon={Ruler} label="Carton W (cm)">
+            <input className="input" type="number" value={w} onChange={(e) => setW(e.target.value)} />
+          </Field>
+
+          <Field icon={Ruler} label="Carton L (cm)">
+            <input className="input" type="number" value={l} onChange={(e) => setL(e.target.value)} />
+          </Field>
+
+          <Field icon={Ruler} label="Carton H (cm)">
+            <input className="input" type="number" value={h} onChange={(e) => setH(e.target.value)} />
+          </Field>
+
+          <Field icon={Tag} label="FOB (per pcs)">
+            <input
+              className="input"
+              type="number"
+              value={fobPerPcs}
+              onChange={(e) => setFobPerPcs(e.target.value)}
+            />
+          </Field>
+
+          <Field icon={Layers} label="Carton Orientation">
+            <select className="input" value={manualOrientation} onChange={(e) => setManualOrientation(e.target.value)}>
+              <option value="LENGTH_WISE">Length-wise (L into depth)</option>
+              <option value="WIDTH_WISE">Width-wise (W into depth)</option>
             </select>
           </Field>
 
-          <Field label="📦 Cartons Across Row">
-            <select value={manualAcross} onChange={(e) => setManualAcross(e.target.value)}>
-              <option value="1">1 carton</option>
-              <option value="2">2 cartons</option>
-              <option value="3">3 cartons</option>
+          <Field icon={LayoutGrid} label="Cartons Across Row">
+            <select className="input" value={manualAcross} onChange={(e) => setManualAcross(Number(e.target.value))}>
+              <option value={1}>1 carton</option>
+              <option value={2}>2 cartons</option>
+              <option value={3}>3 cartons</option>
             </select>
           </Field>
         </div>
 
-        {/* ✅ Orientation Visualization */}
-        <div style={{ marginTop: 12, border: "1px solid #e0e0e0", borderRadius: 12, padding: 12, background: "#f8f9fa" }}>
-          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8, color: "#333" }}>
-            📐 Orientation Preview (Current: {manualOrientation === "LENGTH_WISE" ? "Length-wise" : "Width-wise"} × {manualAcross})
+        {/* Orientation Diagram */}
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Layers className="h-4 w-4 text-slate-700" />
+              <div className="text-sm font-extrabold text-slate-900">Orientation Preview</div>
+            </div>
+            <div className="text-xs text-slate-600">
+              {manualOrientation === "LENGTH_WISE" ? "Length-wise" : "Width-wise"} • Across:{" "}
+              <span className="font-bold text-slate-900">{manualAcross}</span>
+            </div>
           </div>
-          <OrientationDiagram 
-            orientation={manualOrientation} 
+
+          <OrientationDiagram
+            orientation={manualOrientation}
             across={manualAcross}
             cartonW={n(w)}
             cartonL={n(l)}
@@ -294,61 +394,60 @@ export default function FGEntryForm() {
           />
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
-        </div>
-
-        <div style={{ marginTop: 0, display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
-        </div>
-
-        <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
+        {/* KPIs */}
+        <div className="mt-4 grid grid-cols-2 gap-3">
           <KPI label="Total Qty" value={totalQty} />
           <KPI label="Per Carton CBM" value={perCartonCbm.toFixed(6)} />
           <KPI label="Total CBM" value={totalCbm.toFixed(6)} />
           <KPI label="Total FOB" value={totalFob.toFixed(2)} />
         </div>
 
-        <div style={{ marginTop: 12, display: "flex", gap: 10 }}>
+        {/* Actions */}
+        <div className="mt-5 flex flex-wrap gap-3">
           <button
             onClick={handleSave}
-            disabled={saving || !preview?.rowId}
-            style={{
-              padding: "10px 16px",
-              borderRadius: 8,
-              border: "1px solid #111",
-              background: saving || !preview?.rowId ? "#eee" : "#111",
-              color: saving || !preview?.rowId ? "#999" : "#fff",
-              cursor: saving || !preview?.rowId ? "not-allowed" : "pointer",
-              fontWeight: 700,
-            }}
+            disabled={!canSave}
+            className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-extrabold transition ${
+              canSave
+                ? "bg-slate-900 text-white hover:bg-slate-800"
+                : "cursor-not-allowed bg-slate-200 text-slate-500"
+            }`}
           >
-            {saving ? "Saving..." : "💾 Save Entry + Allocation"}
+            <Save className="h-4 w-4" />
+            {saving ? "Saving..." : "Save Entry + Allocation"}
           </button>
+
           <button
             onClick={resetForm}
-            style={{
-              padding: "10px 16px",
-              borderRadius: 8,
-              border: "1px solid #666",
-              background: "#fff",
-              color: "#666",
-              cursor: "pointer",
-              fontWeight: 700,
-            }}
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-extrabold text-slate-700 hover:bg-slate-50"
           >
-            🔄 Reset Form
+            <RotateCcw className="h-4 w-4" />
+            Reset
           </button>
         </div>
       </div>
 
-      {/* RIGHT - Placement Info + Graphical Pane */}
-      <div style={{ display: "grid", gap: 16 }}>
-        {/* ✅ Placement Info moved here */}
-        <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 16, background: "#f8f9fa" }}>
-          <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 8 }}>📍 Placement Info</div>
+      {/* RIGHT */}
+      <div className="grid gap-6">
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="text-lg font-extrabold text-slate-900">Placement Info</div>
+            {preview?.metrics ? (
+              <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
+                <CheckCircle2 className="h-4 w-4" />
+                Preview OK
+              </div>
+            ) : (
+              <div className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800">
+                <AlertCircle className="h-4 w-4" />
+                Waiting
+              </div>
+            )}
+          </div>
 
           {preview?.metrics ? (
-            <div style={{ display: "grid", gap: 8, fontSize: 13 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <>
+              <div className="grid grid-cols-2 gap-3">
                 <KPI label="Row Start (cm)" value={preview.metrics.rowStartAtCm} />
                 <KPI label="Row End (cm)" value={preview.metrics.rowEndAtCm} />
                 <KPI label="Remaining Length (cm)" value={preview.metrics.rowRemainingAfterCm} />
@@ -358,32 +457,53 @@ export default function FGEntryForm() {
                 <KPI label="Layers" value={preview.metrics.layers} />
                 <KPI label="Column Depth (cm)" value={preview.metrics.columnDepthCm} />
                 <KPI label="Columns Used" value={previewColumnsUsed} />
-                <KPI label="Cartons/Column" value={preview.metrics.perColumnCapacity} />
+                <KPI label="Cartons / Column" value={preview.metrics.perColumnCapacity} />
                 <KPI label="Cartons Placed" value={previewCartonsPlaced} />
                 <KPI label="Allocated CBM" value={previewAllocatedCbm.toFixed(6)} />
               </div>
-              <div style={{ marginTop: 8, padding: 8, background: "#e3f2fd", borderRadius: 6, fontSize: 12 }}>
-                <strong>Orientation:</strong> {preview.metrics.orientation}
+
+              <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+                <span className="font-extrabold text-slate-900">Orientation:</span>{" "}
+                {preview.metrics.orientation}
               </div>
-            </div>
+            </>
           ) : (
-            <div style={{ color: "#d32f2f", fontSize: 14, padding: 12, background: "#ffebee", borderRadius: 6 }}>
-              {previewErr || "⚠️ Fill carton qty + dimensions to see preview"}
+            <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+              {previewErr || "Fill carton qty + dimensions to see preview."}
             </div>
           )}
         </div>
 
-        {/* Graphical View */}
         <GraphicalPane warehouse={warehouse} selectedRowId={rowId} preview={preview} />
       </div>
+
+      {/* Tailwind helpers (keep inside file to stay “full code”) */}
+      <style jsx global>{`
+        .input {
+          width: 100%;
+          border: 1px solid rgb(226 232 240);
+          border-radius: 0.85rem;
+          padding: 0.55rem 0.75rem;
+          font-size: 0.875rem;
+          outline: none;
+          background: white;
+        }
+        .input:focus {
+          border-color: rgb(148 163 184);
+          box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.25);
+        }
+      `}</style>
     </div>
   );
 }
 
-function Field({ label, children }) {
+function Field({ label, icon: Icon, children }) {
   return (
-    <label style={{ display: "grid", gap: 4, fontSize: 13 }}>
-      <span style={{ fontWeight: 700, color: "#333" }}>{label}</span>
+    <label className="grid gap-1.5">
+      <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
+        {Icon ? <Icon className="h-4 w-4 text-slate-600" /> : null}
+        <span>{label}</span>
+      </div>
       {children}
     </label>
   );
@@ -391,62 +511,71 @@ function Field({ label, children }) {
 
 function KPI({ label, value }) {
   return (
-    <div style={{ border: "1px solid #e0e0e0", borderRadius: 8, padding: 8, background: "#fff" }}>
-      <div style={{ fontSize: 11, color: "#666", marginBottom: 2 }}>{label}</div>
-      <div style={{ fontSize: 15, fontWeight: 800, color: "#111" }}>{value}</div>
+    <div className="rounded-xl border border-slate-200 bg-white p-3">
+      <div className="text-[11px] font-bold text-slate-500">{label}</div>
+      <div className="mt-1 text-base font-extrabold text-slate-900">{value}</div>
     </div>
   );
 }
 
 function OrientationDiagram({ orientation, across, cartonW, cartonL, rowWidth }) {
-  const svgW = 400;
-  const svgH = 200;
-  const margin = 20;
-  
-  // Determine carton dimensions based on orientation
+  const svgW = 420;
+  const svgH = 220;
+  const margin = 18;
+
   const isLengthWise = orientation === "LENGTH_WISE";
-  const cartonAcrossWidth = isLengthWise ? cartonW : cartonL;
-  const cartonDepth = isLengthWise ? cartonL : cartonW;
-  
-  // Check if fits
-  const totalAcrossWidth = cartonAcrossWidth * across;
-  const fits = totalAcrossWidth <= rowWidth;
-  
-  // Scale for drawing
+  const a = Math.max(1, Math.min(3, Number(across) || 1));
+
+  // Across width depends on orientation
+  const cartonAcrossWidth = isLengthWise ? cartonW : cartonL; // cm along row width
+  const cartonDepth = isLengthWise ? cartonL : cartonW; // cm into row depth
+
+  const totalAcrossWidth = n(cartonAcrossWidth) * a;
+  const fits = totalAcrossWidth > 0 ? totalAcrossWidth <= n(rowWidth) : true;
+
   const maxWidth = svgW - 2 * margin;
-  const scale = Math.min(maxWidth / Math.max(rowWidth, totalAcrossWidth), 1.5);
-  
-  const rowWidthPx = rowWidth * scale;
-  const cartonWidthPx = cartonAcrossWidth * scale;
-  const cartonDepthPx = Math.min(cartonDepth * scale, 80);
-  
+  const scale = Math.min(maxWidth / Math.max(n(rowWidth), totalAcrossWidth || 1), 1.6);
+
+  const rowWidthPx = n(rowWidth) * scale;
+  const cartonWidthPx = n(cartonAcrossWidth) * scale;
+  const cartonDepthPx = Math.max(36, Math.min(n(cartonDepth) * scale, 82));
+
   const startX = margin;
   const rowY = svgH / 2 - cartonDepthPx / 2;
-  
+
   return (
-    <div>
-      <svg width={svgW} height={svgH} style={{ border: "1px solid #ddd", borderRadius: 8, background: "#fff" }}>
-        {/* Row width indicator */}
-        <rect 
-          x={startX} 
-          y={rowY - 15} 
-          width={rowWidthPx} 
-          height={cartonDepthPx + 30} 
-          fill="#e3f2fd" 
-          stroke="#1976d2" 
-          strokeWidth="2"
-          strokeDasharray="4 4"
-          rx="4"
+    <div className="grid gap-2">
+      <svg
+        width={svgW}
+        height={svgH}
+        className="w-full rounded-xl border border-slate-200 bg-white"
+      >
+        {/* Row area */}
+        <rect
+          x={startX}
+          y={rowY - 18}
+          width={rowWidthPx}
+          height={cartonDepthPx + 36}
+          fill="#f1f5f9"
+          stroke="#0f172a"
+          strokeWidth="1.5"
+          strokeDasharray="5 4"
+          rx="10"
         />
-        <text x={startX + rowWidthPx / 2} y={rowY - 20} textAnchor="middle" fontSize="11" fontWeight="700" fill="#1976d2">
-          Row Width: {rowWidth}cm
+        <text
+          x={startX + rowWidthPx / 2}
+          y={rowY - 24}
+          textAnchor="middle"
+          fontSize="11"
+          fontWeight="800"
+          fill="#0f172a"
+        >
+          Row Width: {n(rowWidth)}cm
         </text>
-        
-        {/* Draw cartons */}
-        {Array.from({ length: across }).map((_, i) => {
+
+        {/* Cartons */}
+        {Array.from({ length: a }).map((_, i) => {
           const x = startX + i * cartonWidthPx;
-          const fill = fits ? "#4caf50" : "#f44336";
-          
           return (
             <g key={i}>
               <rect
@@ -454,75 +583,76 @@ function OrientationDiagram({ orientation, across, cartonW, cartonL, rowWidth })
                 y={rowY}
                 width={cartonWidthPx}
                 height={cartonDepthPx}
-                fill={fill}
-                fillOpacity="0.7"
-                stroke="#111"
+                rx="10"
+                fill={fits ? "#10b981" : "#ef4444"}
+                fillOpacity="0.18"
+                stroke={fits ? "#047857" : "#b91c1c"}
                 strokeWidth="2"
-                rx="4"
               />
-              <text 
-                x={x + cartonWidthPx / 2} 
-                y={rowY + cartonDepthPx / 2 - 8} 
-                textAnchor="middle" 
-                fontSize="10" 
-                fontWeight="700" 
-                fill="#fff"
+              <text
+                x={x + cartonWidthPx / 2}
+                y={rowY + cartonDepthPx / 2 - 6}
+                textAnchor="middle"
+                fontSize="10"
+                fontWeight="900"
+                fill={fits ? "#065f46" : "#7f1d1d"}
               >
                 Carton {i + 1}
               </text>
-              <text 
-                x={x + cartonWidthPx / 2} 
-                y={rowY + cartonDepthPx / 2 + 4} 
-                textAnchor="middle" 
-                fontSize="9" 
-                fill="#fff"
+              <text
+                x={x + cartonWidthPx / 2}
+                y={rowY + cartonDepthPx / 2 + 10}
+                textAnchor="middle"
+                fontSize="9"
+                fontWeight="700"
+                fill="#334155"
               >
-                W:{cartonAcrossWidth.toFixed(0)}
-              </text>
-              <text 
-                x={x + cartonWidthPx / 2} 
-                y={rowY + cartonDepthPx / 2 + 15} 
-                textAnchor="middle" 
-                fontSize="9" 
-                fill="#fff"
-              >
-                D:{cartonDepth.toFixed(0)}
+                W:{n(cartonAcrossWidth).toFixed(0)} • D:{n(cartonDepth).toFixed(0)}
               </text>
             </g>
           );
         })}
-        
-        {/* Total width indicator */}
-        <line 
-          x1={startX} 
-          y1={rowY + cartonDepthPx + 15} 
-          x2={startX + across * cartonWidthPx} 
-          y2={rowY + cartonDepthPx + 15} 
-          stroke={fits ? "#4caf50" : "#f44336"} 
+
+        {/* Total width */}
+        <line
+          x1={startX}
+          y1={rowY + cartonDepthPx + 18}
+          x2={startX + a * cartonWidthPx}
+          y2={rowY + cartonDepthPx + 18}
+          stroke={fits ? "#047857" : "#b91c1c"}
           strokeWidth="2"
         />
-        <text 
-          x={startX + (across * cartonWidthPx) / 2} 
-          y={rowY + cartonDepthPx + 28} 
-          textAnchor="middle" 
-          fontSize="10" 
-          fontWeight="700" 
-          fill={fits ? "#2e7d32" : "#c62828"}
+        <text
+          x={startX + (a * cartonWidthPx) / 2}
+          y={rowY + cartonDepthPx + 34}
+          textAnchor="middle"
+          fontSize="10"
+          fontWeight="900"
+          fill={fits ? "#065f46" : "#7f1d1d"}
         >
-          Total: {totalAcrossWidth.toFixed(0)}cm {fits ? "✓ FITS" : "✗ TOO WIDE"}
+          Total: {totalAcrossWidth.toFixed(0)}cm {fits ? "FITS" : "TOO WIDE"}
         </text>
-        
-        {/* Legend */}
-        <text x={startX} y={svgH - 10} fontSize="9" fill="#666">
-          {isLengthWise ? "Length (L) goes into row depth →" : "Width (W) goes into row depth →"}
+
+        <text x={startX} y={svgH - 10} fontSize="10" fontWeight="700" fill="#64748b">
+          {isLengthWise ? "Length goes into depth →" : "Width goes into depth →"}
         </text>
       </svg>
-      
-      <div style={{ marginTop: 8, fontSize: 11, color: "#666", lineHeight: 1.4 }}>
-        <div><strong>View from above:</strong></div>
-        <div>• {isLengthWise ? "Carton LENGTH" : "Carton WIDTH"} ({isLengthWise ? cartonL : cartonW}cm) extends into the row (depth direction)</div>
-        <div>• {isLengthWise ? "Carton WIDTH" : "Carton LENGTH"} ({cartonAcrossWidth}cm) × {across} = {totalAcrossWidth}cm across row width</div>
-        {!fits && <div style={{ color: "#c62828", fontWeight: 700 }}>⚠️ Configuration doesn't fit! Choose fewer cartons or change orientation.</div>}
+
+      <div className="text-xs text-slate-600">
+        <div className="font-bold text-slate-800">Top view explanation:</div>
+        <div>
+          • Depth uses <span className="font-bold text-slate-900">{isLengthWise ? "L" : "W"}</span>{" "}
+          ({isLengthWise ? n(cartonL) : n(cartonW)}cm)
+        </div>
+        <div>
+          • Across uses <span className="font-bold text-slate-900">{isLengthWise ? "W" : "L"}</span>{" "}
+          ({n(cartonAcrossWidth)}cm) × {a} = {totalAcrossWidth.toFixed(0)}cm
+        </div>
+        {!fits ? (
+          <div className="mt-1 font-extrabold text-rose-700">
+            Doesn’t fit — reduce “Across” or change orientation.
+          </div>
+        ) : null}
       </div>
     </div>
   );

@@ -10,28 +10,81 @@ async function seedRowsIfEmpty() {
 
   for (const wh of warehouses) {
     await Row.create([
-      {
-        name: "Row-1",
-        warehouse: wh,
-        type: "continuous",
-        widthCm: 120,
-        lengthCm: 1981,
-        maxHeightCm: 213,
-      },
-      {
-        name: "Row-2",
-        warehouse: wh,
-        type: "segmented",
-        widthCm: 120,
-        maxHeightCm: 213,
-        segments: [{ lengthCm: 353 }, { lengthCm: 548 }, { lengthCm: 548 }, { lengthCm: 323 }],
-        pillars: [
-          { atSegmentBoundaryIndex: 0, radiusCm: 32 },
-          { atSegmentBoundaryIndex: 1, radiusCm: 32 },
-          { atSegmentBoundaryIndex: 2, radiusCm: 32 },
-        ],
-      },
-    ]);
+  {
+    name: "A1",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 1981,
+    maxHeightCm: 213,
+  },
+  {
+    name: "A2",
+    warehouse: wh,
+    type: "segmented",
+    widthCm: 120,
+    maxHeightCm: 213,
+    segments: [{ lengthCm: 353 }, { lengthCm: 548 }, { lengthCm: 548 }, { lengthCm: 323 }],
+    pillars: [
+      { atSegmentBoundaryIndex: 0, radiusCm: 32 },
+      { atSegmentBoundaryIndex: 1, radiusCm: 32 },
+      { atSegmentBoundaryIndex: 2, radiusCm: 32 },
+    ],
+  },
+
+  // ✅ NEW ROWS
+  {
+    name: "A4",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 2200,
+    maxHeightCm: 213,
+  },
+  {
+    name: "A5",
+    warehouse: wh,
+    type: "segmented",
+    widthCm: 120,
+    maxHeightCm: 213,
+    segments: [{ lengthCm: 323 }, { lengthCm: 609 }, { lengthCm: 548 }, { lengthCm: 323 }],
+    pillars: [
+      { atSegmentBoundaryIndex: 0, radiusCm: 32 },
+      { atSegmentBoundaryIndex: 1, radiusCm: 32 },
+      { atSegmentBoundaryIndex: 2, radiusCm: 32 },
+    ],
+  },
+  {
+    name: "A6",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 2200,
+    maxHeightCm: 213,
+  },
+  {
+    name: "A7",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 2200,
+    maxHeightCm: 213,
+  },
+  {
+    name: "A8",
+    warehouse: wh,
+    type: "segmented",
+    widthCm: 120,
+    maxHeightCm: 213,
+    segments: [{ lengthCm: 323 }, { lengthCm: 454 }, { lengthCm: 548 }, { lengthCm: 323 }],
+    pillars: [
+      { atSegmentBoundaryIndex: 0, radiusCm: 32 },
+      { atSegmentBoundaryIndex: 1, radiusCm: 32 },
+      { atSegmentBoundaryIndex: 2, radiusCm: 32 },
+    ],
+  },
+]);
+
   }
 }
 

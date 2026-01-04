@@ -1,4 +1,3 @@
-// app/fgComponents/GraphicalPane.jsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -28,12 +27,15 @@ function allocationLengthCm(allocation) {
   return allocation.columnsBySegment.reduce((sum, s) => sum + n(s.lengthUsedCm), 0);
 }
 
-function allocBlocksFromAllocations(allocations = []) {
+function allocBlocksFromAllocations(allocations = [], entriesMap = new Map()) {
   const blocks = [];
 
   for (const a of allocations) {
     const allocationId = String(a._id || "");
-    const buyer = String(a.buyer || "Unknown");
+    const entryId = String(a.entryId || "");
+    const entry = entriesMap.get(entryId) || {};
+    
+    const buyer = String(a.buyer || entry.buyer || "Unknown");
     const qty = n(a.qtyTotal);
     const cbm = cartonCbm(a.cartonDimCm) * qty;
 
@@ -44,6 +46,9 @@ function allocBlocksFromAllocations(allocations = []) {
         blocks.push({
           key: `${allocationId}-${m.segmentIndex}-${m.startFromRowStartCm}`,
           allocationId,
+          entryId,
+          entry, // ✅ Full entry data
+          allocation: a, // ✅ Full allocation data
           buyer,
           qty,
           cbm,
@@ -51,6 +56,7 @@ function allocBlocksFromAllocations(allocations = []) {
           start: n(m.startFromRowStartCm),
           end: n(m.endFromRowStartCm),
           len: n(m.allocatedLenCm),
+          usedLen: n(m.usedLenCm),
           wastedTail: n(m.wastedTailCm),
         });
       }
@@ -58,6 +64,9 @@ function allocBlocksFromAllocations(allocations = []) {
       blocks.push({
         key: `${allocationId}-fallback`,
         allocationId,
+        entryId,
+        entry,
+        allocation: a,
         buyer,
         qty,
         cbm,
@@ -65,6 +74,7 @@ function allocBlocksFromAllocations(allocations = []) {
         start: n(a.rowStartAtCm),
         end: n(a.rowEndAtCm),
         len: Math.max(0, n(a.rowEndAtCm) - n(a.rowStartAtCm)),
+        usedLen: 0,
         wastedTail: 0,
       });
     }
@@ -94,9 +104,10 @@ function rowHoverText({ row, allocations, buyerStats }) {
     .join("\n");
 }
 
-export default function GraphicalPane({ warehouse, selectedRowId, preview, refreshKey = 0 }) {
+export default function GraphicalPane({ warehouse, selectedRowId, preview }) {
   const [rows, setRows] = useState([]);
   const [allocations, setAllocations] = useState([]);
+  const [entries, setEntries] = useState([]);
 
   async function load() {
     const r = await fetch(`/api/rows?warehouse=${warehouse}`);
@@ -106,11 +117,24 @@ export default function GraphicalPane({ warehouse, selectedRowId, preview, refre
     const a = await fetch(`/api/allocations?warehouse=${warehouse}`);
     const ad = await a.json();
     setAllocations(ad.allocations || []);
+
+    // ✅ Load all entries to get full info
+    const e = await fetch(`/api/entries?warehouse=${warehouse}`);
+    const ed = await e.json();
+    setEntries(ed.entries || []);
   }
 
   useEffect(() => {
     load();
-  }, [warehouse, refreshKey]);
+  }, [warehouse]);
+
+  const entriesMap = useMemo(() => {
+    const m = new Map();
+    for (const e of entries) {
+      m.set(String(e._id), e);
+    }
+    return m;
+  }, [entries]);
 
   const allocationsByRow = useMemo(() => {
     const m = new Map();
@@ -161,7 +185,9 @@ export default function GraphicalPane({ warehouse, selectedRowId, preview, refre
   return (
     <div className="border border-slate-200 rounded-2xl p-6 bg-gradient-to-br from-orange-50 to-blue-50 shadow-xl">
       <div className="flex justify-between items-center mb-4">
-        <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">Graphical View ({warehouse})</h2>
+        <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+          🏭 Graphical View ({warehouse})
+        </h2>
         <button
           onClick={load}
           className="px-4 py-2 rounded-full border border-slate-800 bg-slate-800 text-white font-bold hover:bg-slate-700 transition"
@@ -186,6 +212,7 @@ export default function GraphicalPane({ warehouse, selectedRowId, preview, refre
               buyerStats={buyerStats}
               preview={isSelected ? preview : null}
               selected={isSelected}
+              entriesMap={entriesMap}
             />
           );
         })}
@@ -194,7 +221,7 @@ export default function GraphicalPane({ warehouse, selectedRowId, preview, refre
   );
 }
 
-function RowCard({ row, allocations, preview, selected, stats, buyerStats }) {
+function RowCard({ row, allocations, preview, selected, stats, buyerStats, entriesMap }) {
   const buyerRows = Array.from(buyerStats.entries()).sort((a, b) => b[1].lengthCm - a[1].lengthCm);
 
   return (
@@ -277,21 +304,16 @@ function RowCard({ row, allocations, preview, selected, stats, buyerStats }) {
       </div>
 
       <div className="mt-4">
-        <RowBar row={row} allocations={allocations} preview={preview} buyerStats={buyerStats} colorMode="allocation" />
+        <RowBar row={row} allocations={allocations} preview={preview} buyerStats={buyerStats} entriesMap={entriesMap} colorMode="allocation" />
       </div>
     </div>
   );
 }
 
-function RowBar({ row, allocations, preview, buyerStats, colorMode = "allocation" }) {
+function RowBar({ row, allocations, preview, buyerStats, entriesMap, colorMode = "allocation" }) {
   const W = 520;
   const H = 100;
 
-  // ✅ pillar gap = pillar DIAMETER (not radius)
-  // Backward compat rules:
-  // - if diameterCm exists -> use it
-  // - else if radiusCm >= 40 -> assume you saved diameter in radiusCm (like 60)
-  // - else diameter = 2 * radiusCm
   function pillarDiameterAfterSegmentCm(segmentIndex) {
     if (row?.type !== "segmented") return 0;
     const p = (row.pillars || []).find((x) => n(x.atSegmentBoundaryIndex) === n(segmentIndex));
@@ -307,12 +329,11 @@ function RowBar({ row, allocations, preview, buyerStats, colorMode = "allocation
       ? [{ segmentIndex: 0, lengthCm: n(row.lengthCm) }]
       : (row.segments || []).map((s, i) => ({ segmentIndex: i, lengthCm: n(s.lengthCm) }));
 
-  // ✅ Build physical parts: [segment][pillar gap][segment]...
   const parts = [];
   for (let i = 0; i < segs.length; i++) {
     parts.push({ type: "segment", segmentIndex: segs[i].segmentIndex, lengthCm: segs[i].lengthCm });
     if (row.type === "segmented" && i < segs.length - 1) {
-      const gap = pillarDiameterAfterSegmentCm(i); // ✅ diameter gap
+      const gap = pillarDiameterAfterSegmentCm(i);
       if (gap > 0) parts.push({ type: "pillar", boundaryIndex: i, lengthCm: gap });
     }
   }
@@ -321,7 +342,6 @@ function RowBar({ row, allocations, preview, buyerStats, colorMode = "allocation
   const safeTotalLen = totalPhysicalLen > 0 ? totalPhysicalLen : 1;
   const sx = (cm) => (n(cm) / safeTotalLen) * W;
 
-  // ✅ Layout parts in px + cm ranges
   let xCursor = 0;
   let cmCursor = 0;
 
@@ -363,7 +383,7 @@ function RowBar({ row, allocations, preview, buyerStats, colorMode = "allocation
   const clipRowId = `clip-row-${String(row._id || row.name).replace(/\s+/g, "-")}`;
   const clipSegId = `clip-segs-${String(row._id || row.name).replace(/\s+/g, "-")}`;
 
-  const blocks = allocBlocksFromAllocations(allocations);
+  const blocks = allocBlocksFromAllocations(allocations, entriesMap);
 
   const previewBlocks = Array.isArray(preview?.segmentsMeta)
     ? preview.segmentsMeta.map((m, idx) => ({
@@ -379,12 +399,10 @@ function RowBar({ row, allocations, preview, buyerStats, colorMode = "allocation
   return (
     <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="w-full">
       <defs>
-        {/* Clip whole bar (rounded) */}
         <clipPath id={clipRowId}>
           <rect x="0" y={y} width={W} height={h} rx="12" />
         </clipPath>
 
-        {/* ✅ Clip ONLY segments (excludes pillar gaps) */}
         <clipPath id={clipSegId}>
           {segmentRects.map((r) => (
             <rect key={`c-${r.segmentIndex}`} x={r.segX} y={y} width={r.segW} height={h} />
@@ -407,12 +425,10 @@ function RowBar({ row, allocations, preview, buyerStats, colorMode = "allocation
         </pattern>
       </defs>
 
-      {/* Base outer */}
       <rect x="0" y={y} width={W} height={h} fill="url(#segmentGradient)" stroke="#0f172a" strokeWidth="2" rx="12">
         <title>{baseTip}</title>
       </rect>
 
-      {/* Segment backgrounds + borders */}
       {segmentRects.map((r, i) => {
         const bg = colorFromKey(`seg-${i}`);
         const tip = [`📦 Segment ${i + 1}`, `Length: ${r.segLen} cm`, `Position: ${r.startCm} → ${r.endCm} cm`].join("\n");
@@ -430,7 +446,6 @@ function RowBar({ row, allocations, preview, buyerStats, colorMode = "allocation
         );
       })}
 
-      {/* ✅ Allocations clipped ONLY to segments (so NEVER shows inside pillar gap) */}
       <g clipPath={`url(#${clipSegId})`}>
         {blocks.map((b) => {
           const x = sx(b.start);
@@ -438,15 +453,61 @@ function RowBar({ row, allocations, preview, buyerStats, colorMode = "allocation
           if (w <= 0) return null;
 
           const fillKey = colorMode === "buyer" ? b.buyer : b.allocationId;
+          
+          // ✅ Build comprehensive tooltip with full entry info
+          const entry = b.entry || {};
+          const alloc = b.allocation || {};
+          const dim = entry.cartonDimCm || alloc.cartonDimCm || {};
+          
           const tip = [
-            `🏢 ${b.buyer}`,
-            `ID: ...${b.allocationId.slice(-6)}`,
-            `📦 Cartons: ${b.qty}`,
-            `📊 CBM: ${b.cbm.toFixed(3)}`,
-            `📍 Position: ${b.start} → ${b.end} cm`,
-            `📏 Reserved: ${b.len} cm`,
-            b.usedLen ? `✓ Used: ${b.usedLen} cm` : "",
-            b.wastedTail ? `⚠️ Wasted: ${b.wastedTail} cm` : "",
+            `📦 ENTRY DETAILS`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `Code: ${entry.code || 'N/A'}`,
+            `Buyer: ${b.buyer}`,
+            `Floor: ${entry.floor || 'N/A'}`,
+            `Factory: ${entry.factory || 'N/A'}`,
+            `Building: ${entry.assigned_building || 'N/A'}`,
+            ``,
+            `📋 ORDER INFO`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `Season: ${entry.season || 'N/A'}`,
+            `PO Number: ${entry.poNumber || 'N/A'}`,
+            `Style: ${entry.style || 'N/A'}`,
+            `Model: ${entry.model || 'N/A'}`,
+            `Item: ${entry.item || 'N/A'}`,
+            `Color: ${entry.color || 'N/A'}`,
+            `Size: ${entry.size || 'N/A'}`,
+            ``,
+            `📊 QUANTITY & DIMENSIONS`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `Cartons: ${b.qty}`,
+            `Pcs/Carton: ${entry.pcsPerCarton || 'N/A'}`,
+            `Total Pcs: ${entry.totalQty || 'N/A'}`,
+            `Carton Dims: ${n(dim.w)}×${n(dim.l)}×${n(dim.h)} cm`,
+            `Per Carton CBM: ${(entry.perCartonCbm || 0).toFixed(6)}`,
+            `Total CBM: ${b.cbm.toFixed(3)}`,
+            ``,
+            `💰 FINANCIAL`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `FOB/Pcs: $${(entry.fobPerPcs || 0).toFixed(2)}`,
+            `Total FOB: $${(entry.totalFob || 0).toFixed(2)}`,
+            ``,
+            `📍 ALLOCATION POSITION`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `Start Position: ${b.start} cm`,
+            `End Position: ${b.end} cm`,
+            `Reserved Length: ${b.len} cm`,
+            b.usedLen ? `Used Length: ${b.usedLen} cm` : '',
+            b.wastedTail ? `⚠️ Wasted Tail: ${b.wastedTail} cm` : '',
+            `Orientation: ${alloc.orientation || 'N/A'}`,
+            `Across: ${alloc.across || 'N/A'}`,
+            `Layers: ${alloc.layers || 'N/A'}`,
+            `Column Depth: ${alloc.columnDepthCm || 'N/A'} cm`,
+            ``,
+            `🕒 TIMESTAMPS`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `Created: ${entry.createdAt ? new Date(entry.createdAt).toLocaleString() : 'N/A'}`,
+            `Status: ${entry.status || 'N/A'}`,
           ]
             .filter(Boolean)
             .join("\n");
@@ -468,7 +529,6 @@ function RowBar({ row, allocations, preview, buyerStats, colorMode = "allocation
         })}
       </g>
 
-      {/* ✅ Preview overlay clipped ONLY to segments */}
       <g clipPath={`url(#${clipSegId})`}>
         {previewBlocks.map((p) => {
           const x = sx(p.start);
@@ -482,31 +542,26 @@ function RowBar({ row, allocations, preview, buyerStats, colorMode = "allocation
         })}
       </g>
 
-      {/* ✅ Pillar gaps drawn ON TOP (fully separate & clean) */}
       {pillarRects.map((p) => {
         const tip = [`⚫ Pillar (blocked)`, `Diameter: ${p.gapCm} cm`, `Position: ${p.startCm} → ${p.endCm} cm`].join("\n");
 
         const cx = p.x + p.w / 2;
         const cy = y + h / 2;
 
-        // big circle that fits inside gap
         const rPx = Math.max(10, Math.min(h / 2 - 4, p.w / 2 - 4));
 
         return (
           <g key={`pillar-${p.boundaryIndex}`}>
-            {/* gap area (opaque so it looks EMPTY/blocked, not mixed with colors) */}
             <rect x={p.x} y={y} width={p.w} height={h} fill="#ffffff" />
             <rect x={p.x} y={y} width={p.w} height={h} fill="url(#pillarHatch)" opacity="0.45" />
             <rect x={p.x} y={y} width={p.w} height={h} fill="transparent" stroke="#64748b" strokeWidth="1.5" strokeDasharray="6 4">
               <title>{tip}</title>
             </rect>
 
-            {/* big pillar */}
             <circle cx={cx} cy={cy} r={rPx} fill="url(#pillarGrad)" stroke="#0f172a" strokeOpacity="0.55" strokeWidth="2">
               <title>{tip}</title>
             </circle>
 
-            {/* label */}
             <text x={cx} y={y + 14} textAnchor="middle" fontSize="10" fill="#0f172a" fontWeight="800">
               {p.gapCm}cm
             </text>
@@ -515,7 +570,7 @@ function RowBar({ row, allocations, preview, buyerStats, colorMode = "allocation
       })}
 
       <text x="10" y="94" fontSize="10" fill="#64748b" fontWeight="600">
-        💡 Hover for details | Colors = allocations | Red = preview | Pillar gap = blocked (no fill allowed)
+        💡 Hover over colored blocks for full entry details | Red = preview | Pillar = blocked
       </text>
     </svg>
   );
