@@ -1,3 +1,4 @@
+// app/api/allocations/preview/route.js
 import { dbConnect } from "@/services/mongo";
 import Row from "@/models/Row";
 import Allocation from "@/models/Allocation";
@@ -7,7 +8,7 @@ export async function POST(req) {
   await dbConnect();
   const body = await req.json();
 
-  const { rowId, buyer, cartonQty, cartonDimCm } = body;
+  const { rowId, buyer, cartonQty, cartonDimCm, manualOrientation, manualAcross } = body;
   if (!rowId || !buyer || !cartonQty || !cartonDimCm) {
     return Response.json({ ok: false, message: "rowId, buyer, cartonQty, cartonDimCm are required" }, { status: 400 });
   }
@@ -27,6 +28,8 @@ export async function POST(req) {
       h: Number(cartonDimCm.h),
     },
     priorAllocations: prior,
+    manualOrientation,
+    manualAcross,
   });
 
   if (!preview.ok) return Response.json({ ok: false, message: preview.reason }, { status: 200 });

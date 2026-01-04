@@ -1,3 +1,4 @@
+// app/fgComponents/GraphicalPane.jsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -50,7 +51,6 @@ function allocBlocksFromAllocations(allocations = []) {
           start: n(m.startFromRowStartCm),
           end: n(m.endFromRowStartCm),
           len: n(m.allocatedLenCm),
-          usedLen: n(m.usedLenCm),
           wastedTail: n(m.wastedTailCm),
         });
       }
@@ -65,7 +65,6 @@ function allocBlocksFromAllocations(allocations = []) {
         start: n(a.rowStartAtCm),
         end: n(a.rowEndAtCm),
         len: Math.max(0, n(a.rowEndAtCm) - n(a.rowStartAtCm)),
-        usedLen: 0,
         wastedTail: 0,
       });
     }
@@ -95,7 +94,7 @@ function rowHoverText({ row, allocations, buyerStats }) {
     .join("\n");
 }
 
-export default function GraphicalPane({ warehouse, selectedRowId, preview }) {
+export default function GraphicalPane({ warehouse, selectedRowId, preview, refreshKey = 0 }) {
   const [rows, setRows] = useState([]);
   const [allocations, setAllocations] = useState([]);
 
@@ -111,7 +110,7 @@ export default function GraphicalPane({ warehouse, selectedRowId, preview }) {
 
   useEffect(() => {
     load();
-  }, [warehouse]);
+  }, [warehouse, refreshKey]);
 
   const allocationsByRow = useMemo(() => {
     const m = new Map();
@@ -162,10 +161,7 @@ export default function GraphicalPane({ warehouse, selectedRowId, preview }) {
   return (
     <div className="border border-slate-200 rounded-2xl p-6 bg-gradient-to-br from-orange-50 to-blue-50 shadow-xl">
       <div className="flex justify-between items-center mb-4">
-        <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-          
-          Graphical View ({warehouse})
-        </h2>
+        <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">Graphical View ({warehouse})</h2>
         <button
           onClick={load}
           className="px-4 py-2 rounded-full border border-slate-800 bg-slate-800 text-white font-bold hover:bg-slate-700 transition"

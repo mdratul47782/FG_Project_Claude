@@ -40,6 +40,25 @@ const CellSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const PackSchema = new mongoose.Schema(
+  {
+    depthBy: { type: String, enum: ["L", "W"], default: "L" },
+    acrossWanted: { type: Number, enum: [2, 3], default: 3 },
+  },
+  { _id: false }
+);
+
+const CreatedBySchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, required: false },
+    user_name: { type: String, default: "" },
+    role: { type: String, default: "" },
+    assigned_building: { type: String, default: "" },
+    factory: { type: String, default: "" },
+  },
+  { _id: false }
+);
+
 const AllocationSchema = new mongoose.Schema(
   {
     entryId: { type: mongoose.Schema.Types.ObjectId, ref: "FGEntry", required: true },
@@ -49,6 +68,9 @@ const AllocationSchema = new mongoose.Schema(
     buyer: { type: String, required: true },
 
     cartonDimCm: { w: Number, l: Number, h: Number },
+
+    // ✅ saved choice used for this allocation
+    pack: { type: PackSchema, default: () => ({ depthBy: "L", acrossWanted: 3 }) },
 
     rowWidthCm: { type: Number, default: 120 },
     rowMaxHeightCm: { type: Number, default: 213 },
@@ -72,6 +94,9 @@ const AllocationSchema = new mongoose.Schema(
     segmentsMeta: { type: [SegmentMetaSchema], default: [] },
     columnsBySegment: { type: [ColumnsBySegmentSchema], default: [] },
     cells: { type: [CellSchema], default: [] },
+
+    // ✅ auth snapshot
+    createdBy: { type: CreatedBySchema, default: () => ({}) },
   },
   { timestamps: true }
 );

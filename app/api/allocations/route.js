@@ -1,4 +1,4 @@
-// app\api\allocations\route.js
+// app/api/allocations/route.js
 import { dbConnect } from "@/services/mongo";
 import Allocation from "@/models/Allocation";
 import FGEntry from "@/models/FGEntry";
@@ -23,7 +23,7 @@ export async function POST(req) {
   await dbConnect();
   const body = await req.json();
 
-  const { entryId, rowId } = body;
+  const { entryId, rowId, manualOrientation, manualAcross } = body;
   if (!entryId || !rowId) {
     return Response.json({ ok: false, message: "entryId and rowId are required" }, { status: 400 });
   }
@@ -50,6 +50,8 @@ export async function POST(req) {
     cartonDimCm: entry.cartonDimCm,
     cartonQty: entry.cartonQty,
     priorAllocations: prior,
+    manualOrientation,
+    manualAcross,
   });
 
   if (!preview.ok) return Response.json({ ok: false, message: preview.reason }, { status: 400 });

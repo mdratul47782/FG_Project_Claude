@@ -13,29 +13,54 @@ function ceilDiv(a, b) {
   return Math.ceil(Number(a) / Number(b));
 }
 
-// ✅ NEW: pillar gap (you said “10cm pillar between segments”)
-// Your Row schema stores pillars as { atSegmentBoundaryIndex, radiusCm } :contentReference[oaicite:0]{index=0}
 function pillarGapAfterSegmentCm(row, segmentIndex) {
   if (row?.type !== "segmented") return 0;
   const p = (row.pillars || []).find((x) => Number(x.atSegmentBoundaryIndex) === Number(segmentIndex));
-  // treating radiusCm as the GAP length (10cm) because that’s what you described
-  return Number(p?.radiusCm || 0);
+  const d = Number(p?.diameterCm || 0);
+  const r = Number(p?.radiusCm || 0);
+  if (d > 0) return d;
+  if (r <= 0) return 0;
+  return r >= 40 ? r : 2 * r;
 }
 
-export function computeMetrics({ buyer, rowWidthCm, rowMaxHeightCm, cartonDimCm }) {
+export function computeMetrics({ buyer, rowWidthCm, rowMaxHeightCm, cartonDimCm, manualOrientation, manualAcross }) {
   const w = Number(cartonDimCm.w);
   const l = Number(cartonDimCm.l);
   const h = Number(cartonDimCm.h);
 
   if (h > rowMaxHeightCm) return { ok: false, reason: "Carton height > 213cm (row max height)." };
 
-  const decathlon = isDecathlonBuyer(buyer);
+  let orientation, across, columnDepthCm;
 
-  const orientation = decathlon ? "DECATHLON_LENGTH_ALONG_WIDTH" : "DEFAULT_WIDTH_ALONG_WIDTH";
-  const across = decathlon ? floorDiv(rowWidthCm, l) : floorDiv(rowWidthCm, w);
+  // ✅ Use manual settings if provided
+  if (manualOrientation && manualAcross) {
+    orientation = manualOrientation;
+    across = Number(manualAcross);
+    
+    // Determine column depth based on orientation
+    if (manualOrientation === "LENGTH_WISE") {
+      columnDepthCm = l;
+      // Validate: can we fit 'across' number of cartons width-wise?
+      if (across * w > rowWidthCm) {
+        return { ok: false, reason: `Cannot fit ${across} cartons width-wise (${across * w}cm > ${rowWidthCm}cm row width).` };
+      }
+    } else {
+      // WIDTH_WISE
+      columnDepthCm = w;
+      // Validate: can we fit 'across' number of cartons length-wise?
+      if (across * l > rowWidthCm) {
+        return { ok: false, reason: `Cannot fit ${across} cartons length-wise (${across * l}cm > ${rowWidthCm}cm row width).` };
+      }
+    }
+  } else {
+    // Auto mode (legacy)
+    const decathlon = isDecathlonBuyer(buyer);
+    orientation = decathlon ? "DECATHLON_LENGTH_ALONG_WIDTH" : "DEFAULT_WIDTH_ALONG_WIDTH";
+    across = decathlon ? floorDiv(rowWidthCm, l) : floorDiv(rowWidthCm, w);
+    columnDepthCm = decathlon ? w : l;
+  }
+
   const layers = floorDiv(rowMaxHeightCm, h);
-
-  const columnDepthCm = decathlon ? w : l; // length direction :contentReference[oaicite:1]{index=1}
 
   if (across < 1) return { ok: false, reason: "Does not fit across row width (across < 1)." };
   if (layers < 1) return { ok: false, reason: "Does not fit in height (layers < 1)." };
@@ -78,12 +103,15 @@ export function buildCellsSnapshot({ segmentsPlan, across, layers, qtyTotal }) {
 
   return cells;
 }
-export function previewForRow({ row, buyer, cartonDimCm, cartonQty, priorAllocations = [] }) {
+
+export function previewForRow({ row, buyer, cartonDimCm, cartonQty, priorAllocations = [], manualOrientation, manualAcross }) {
   const metrics = computeMetrics({
     buyer,
     rowWidthCm: Number(row.widthCm || 120),
     rowMaxHeightCm: Number(row.maxHeightCm || 213),
     cartonDimCm,
+    manualOrientation,
+    manualAcross,
   });
   if (!metrics.ok) return { ok: false, reason: metrics.reason };
 
@@ -92,7 +120,6 @@ export function previewForRow({ row, buyer, cartonDimCm, cartonQty, priorAllocat
       ? [{ segmentIndex: 0, lengthCm: Number(row.lengthCm || 0) }]
       : (row.segments || []).map((s, i) => ({ segmentIndex: i, lengthCm: Number(s.lengthCm || 0) }));
 
-  // ✅ compute segmentStartCm including pillar gaps
   const segStarts = [];
   let cursor = 0;
   for (let i = 0; i < segs.length; i++) {
@@ -102,8 +129,6 @@ export function previewForRow({ row, buyer, cartonDimCm, cartonQty, priorAllocat
   }
   const rowTotalLengthCm = cursor;
 
-  // ✅ used length per segment from existing allocations
-  // Prefer segmentsMeta.allocatedLenCm (reserved), fallback to columnsBySegment.lengthUsedCm
   const usedBySeg = new Map();
   for (const a of priorAllocations) {
     if (Array.isArray(a.segmentsMeta) && a.segmentsMeta.length > 0) {
@@ -142,12 +167,10 @@ export function previewForRow({ row, buyer, cartonDimCm, cartonQty, priorAllocat
     const columnsUsed = ceilDiv(qtyPlaced, metrics.perColumnCapacity);
     const lengthUsedCm = columnsUsed * metrics.columnDepthCm;
 
-    // ✅ “wasted tail” rule:
-    // If leftover < 1 columnDepth, it can’t fit any more columns, so reserve it.
-    const tail = seg.lengthCm - usedBeforeCm - lengthUsedCm; // leftover in this segment
+    const tail = seg.lengthCm - usedBeforeCm - lengthUsedCm;
     const wastedTailCm = tail > 0 && tail < metrics.columnDepthCm ? tail : 0;
 
-    const allocatedLenCm = lengthUsedCm + wastedTailCm; // reserved length
+    const allocatedLenCm = lengthUsedCm + wastedTailCm;
     const startFromRowStartCm = segmentStartCm + usedBeforeCm;
     const endFromRowStartCm = startFromRowStartCm + allocatedLenCm;
     const remainingAfterCm = seg.lengthCm - usedBeforeCm - allocatedLenCm;
@@ -156,21 +179,18 @@ export function previewForRow({ row, buyer, cartonDimCm, cartonQty, priorAllocat
       segmentIndex: seg.segmentIndex,
       columnsUsed,
       qtyPlaced,
-      lengthUsedCm, // keep “used” for cells
+      lengthUsedCm,
     });
 
     segmentsMeta.push({
       segmentIndex: seg.segmentIndex,
       segmentStartCm,
       segmentLengthCm: seg.lengthCm,
-
       usedBeforeCm,
       startFromRowStartCm,
-      allocatedLenCm, // ✅ now can become full segment length (ex: 353)
+      allocatedLenCm,
       endFromRowStartCm,
       remainingAfterCm,
-
-      // ✅ optional (we’ll add to schema below)
       wastedTailCm,
     });
 
