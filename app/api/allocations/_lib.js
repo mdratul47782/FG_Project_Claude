@@ -15,7 +15,9 @@ function ceilDiv(a, b) {
 
 function pillarGapAfterSegmentCm(row, segmentIndex) {
   if (row?.type !== "segmented") return 0;
-  const p = (row.pillars || []).find((x) => Number(x.atSegmentBoundaryIndex) === Number(segmentIndex));
+  const p = (row.pillars || []).find(
+    (x) => Number(x.atSegmentBoundaryIndex) === Number(segmentIndex)
+  );
   const d = Number(p?.diameterCm || 0);
   const r = Number(p?.radiusCm || 0);
   if (d > 0) return d;
@@ -23,39 +25,155 @@ function pillarGapAfterSegmentCm(row, segmentIndex) {
   return r >= 40 ? r : 2 * r;
 }
 
-export function computeMetrics({ buyer, rowWidthCm, rowMaxHeightCm, cartonDimCm, manualOrientation, manualAcross }) {
+/** Merge [start,end) intervals */
+function mergeIntervals(intervals = []) {
+  const arr = intervals
+    .map((x) => [Number(x[0]), Number(x[1])])
+    .filter(([s, e]) => Number.isFinite(s) && Number.isFinite(e) && e > s)
+    .sort((a, b) => a[0] - b[0]);
+
+  const merged = [];
+  for (const [s, e] of arr) {
+    if (!merged.length || s > merged[merged.length - 1][1]) merged.push([s, e]);
+    else merged[merged.length - 1][1] = Math.max(merged[merged.length - 1][1], e);
+  }
+  return merged;
+}
+
+/** Free ranges inside [0, segmentLen) given merged occupied ranges */
+function freeRanges(segmentLen, occupiedMerged = []) {
+  const free = [];
+  let cursor = 0;
+
+  for (const [s0, e0] of occupiedMerged) {
+    const s = Math.max(0, s0);
+    const e = Math.min(segmentLen, e0);
+    if (e <= 0 || s >= segmentLen) continue;
+
+    if (s > cursor) free.push([cursor, s]);
+    cursor = Math.max(cursor, e);
+  }
+
+  if (cursor < segmentLen) free.push([cursor, segmentLen]);
+  return free.filter(([a, b]) => b - a > 0);
+}
+
+/**
+ * Build occupied ranges PER SEGMENT, using real start positions.
+ * Fixes the deletion-hole problem (sum-of-length is wrong when gaps exist).
+ */
+function buildOccupiedBySegment({ priorAllocations = [], segStarts = [] }) {
+  const occ = new Map(); // segIndex -> [[startLocal,endLocal], ...]
+
+  const add = (segIndex, startLocal, endLocal) => {
+    const s = Number(startLocal);
+    const e = Number(endLocal);
+    if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) return;
+    const arr = occ.get(segIndex) || [];
+    arr.push([s, e]);
+    occ.set(segIndex, arr);
+  };
+
+  for (const a of priorAllocations) {
+    // Best source: segmentsMeta (has true start positions)
+    if (Array.isArray(a.segmentsMeta) && a.segmentsMeta.length > 0) {
+      for (const m of a.segmentsMeta) {
+        const segIndex = Number(m.segmentIndex);
+
+        const segStartGlobal = Number.isFinite(segStarts[segIndex])
+          ? Number(segStarts[segIndex])
+          : Number(m.segmentStartCm || 0);
+
+        const startGlobal = Number.isFinite(Number(m.startFromRowStartCm))
+          ? Number(m.startFromRowStartCm)
+          : segStartGlobal + Number(m.usedBeforeCm || 0);
+
+        const allocated = Number(m.allocatedLenCm || 0);
+        const endGlobal = startGlobal + allocated;
+
+        const startLocal = startGlobal - segStartGlobal;
+        const endLocal = endGlobal - segStartGlobal;
+
+        add(segIndex, startLocal, endLocal);
+      }
+      continue;
+    }
+
+    // Fallback: if old allocations don't have segmentsMeta, assume packed at segment start
+    if (Array.isArray(a.columnsBySegment) && a.columnsBySegment.length > 0) {
+      for (const s of a.columnsBySegment) {
+        const segIndex = Number(s.segmentIndex);
+        const len = Number(s.lengthUsedCm || 0);
+        if (len > 0) add(segIndex, 0, len);
+      }
+      continue;
+    }
+
+    // Last fallback: use rowStart/rowEnd in segment 0
+    const startGlobal = Number(a.rowStartAtCm || 0);
+    const endGlobal = Number(a.rowEndAtCm || 0);
+    const segStartGlobal = Number(segStarts[0] || 0);
+    add(0, startGlobal - segStartGlobal, endGlobal - segStartGlobal);
+  }
+
+  // Merge each segment intervals
+  const merged = new Map();
+  for (const [segIndex, arr] of occ.entries()) {
+    merged.set(segIndex, mergeIntervals(arr));
+  }
+  return merged;
+}
+
+export function computeMetrics({
+  buyer,
+  rowWidthCm,
+  rowMaxHeightCm,
+  cartonDimCm,
+  manualOrientation,
+  manualAcross,
+}) {
   const w = Number(cartonDimCm.w);
   const l = Number(cartonDimCm.l);
   const h = Number(cartonDimCm.h);
 
-  if (h > rowMaxHeightCm) return { ok: false, reason: "Carton height > 213cm (row max height)." };
+  if (h > rowMaxHeightCm) {
+    return { ok: false, reason: `Carton height (${h}cm) > row max height (${rowMaxHeightCm}cm).` };
+  }
 
   let orientation, across, columnDepthCm;
 
   // ✅ Use manual settings if provided
   if (manualOrientation && manualAcross) {
-    orientation = manualOrientation;
+    orientation = String(manualOrientation);
     across = Number(manualAcross);
-    
-    // Determine column depth based on orientation
-    if (manualOrientation === "LENGTH_WISE") {
+
+    if (orientation === "LENGTH_WISE") {
+      // length goes into depth, width stays across
       columnDepthCm = l;
-      // Validate: can we fit 'across' number of cartons width-wise?
       if (across * w > rowWidthCm) {
-        return { ok: false, reason: `Cannot fit ${across} cartons width-wise (${across * w}cm > ${rowWidthCm}cm row width).` };
+        return {
+          ok: false,
+          reason: `Cannot fit ${across} cartons width-wise (${across * w}cm > ${rowWidthCm}cm row width).`,
+        };
       }
     } else {
-      // WIDTH_WISE
+      // WIDTH_WISE: width goes into depth, length stays across
       columnDepthCm = w;
-      // Validate: can we fit 'across' number of cartons length-wise?
       if (across * l > rowWidthCm) {
-        return { ok: false, reason: `Cannot fit ${across} cartons length-wise (${across * l}cm > ${rowWidthCm}cm row width).` };
+        return {
+          ok: false,
+          reason: `Cannot fit ${across} cartons length-wise (${across * l}cm > ${rowWidthCm}cm row width).`,
+        };
       }
     }
   } else {
-    // Auto mode (legacy)
+    // ✅ Auto mode
     const decathlon = isDecathlonBuyer(buyer);
-    orientation = decathlon ? "DECATHLON_LENGTH_ALONG_WIDTH" : "DEFAULT_WIDTH_ALONG_WIDTH";
+
+    // Decathlon: across uses carton LENGTH, so depth uses WIDTH  => WIDTH_WISE
+    // Default: across uses carton WIDTH, so depth uses LENGTH   => LENGTH_WISE
+    orientation = decathlon ? "WIDTH_WISE" : "LENGTH_WISE";
+
     across = decathlon ? floorDiv(rowWidthCm, l) : floorDiv(rowWidthCm, w);
     columnDepthCm = decathlon ? w : l;
   }
@@ -93,9 +211,21 @@ export function buildCellsSnapshot({ segmentsPlan, across, layers, qtyTotal }) {
         if (remaining > 0) {
           const filledLayers = Math.min(layers, remaining);
           remaining -= filledLayers;
-          cells.push({ segmentIndex, columnIndex: col, acrossIndex: a, filledLayers, state: "occupied" });
+          cells.push({
+            segmentIndex,
+            columnIndex: col,
+            acrossIndex: a,
+            filledLayers,
+            state: "occupied",
+          });
         } else {
-          cells.push({ segmentIndex, columnIndex: col, acrossIndex: a, filledLayers: 0, state: "reserved" });
+          cells.push({
+            segmentIndex,
+            columnIndex: col,
+            acrossIndex: a,
+            filledLayers: 0,
+            state: "reserved",
+          });
         }
       }
     }
@@ -104,7 +234,15 @@ export function buildCellsSnapshot({ segmentsPlan, across, layers, qtyTotal }) {
   return cells;
 }
 
-export function previewForRow({ row, buyer, cartonDimCm, cartonQty, priorAllocations = [], manualOrientation, manualAcross }) {
+/** ✅ NEW: compute how many cartons can fit in the remaining free gaps */
+function computeMaxAllocatableCartons({
+  row,
+  buyer,
+  cartonDimCm,
+  priorAllocations = [],
+  manualOrientation,
+  manualAcross,
+}) {
   const metrics = computeMetrics({
     buyer,
     rowWidthCm: Number(row.widthCm || 120),
@@ -118,8 +256,122 @@ export function previewForRow({ row, buyer, cartonDimCm, cartonQty, priorAllocat
   const segs =
     row.type === "continuous"
       ? [{ segmentIndex: 0, lengthCm: Number(row.lengthCm || 0) }]
+      : (row.segments || []).map((s, i) => ({
+          segmentIndex: i,
+          lengthCm: Number(s.lengthCm || 0),
+        }));
+
+  // segment start positions (including pillar gaps)
+  const segStarts = [];
+  let cursor = 0;
+  for (let i = 0; i < segs.length; i++) {
+    segStarts[i] = cursor;
+    cursor += segs[i].lengthCm;
+    if (i < segs.length - 1) cursor += pillarGapAfterSegmentCm(row, i);
+  }
+
+  const occupiedBySeg = buildOccupiedBySegment({ priorAllocations, segStarts });
+
+  let maxCartons = 0;
+  let freeLengthTotalCm = 0;
+  let freeColumnsTotal = 0;
+
+  for (let i = 0; i < segs.length; i++) {
+    const seg = segs[i];
+    const occupiedMerged = occupiedBySeg.get(seg.segmentIndex) || [];
+    const gaps = freeRanges(seg.lengthCm, occupiedMerged);
+
+    for (const [gapStart, gapEnd] of gaps) {
+      const freeLength = Math.max(0, gapEnd - gapStart);
+      if (freeLength <= 0) continue;
+
+      const columnsFit = Math.floor(freeLength / metrics.columnDepthCm);
+      if (columnsFit <= 0) continue;
+
+      freeLengthTotalCm += freeLength;
+      freeColumnsTotal += columnsFit;
+      maxCartons += columnsFit * metrics.perColumnCapacity;
+    }
+  }
+
+  return {
+    ok: true,
+    metrics,
+    maxCartons,
+    freeLengthTotalCm,
+    freeColumnsTotal,
+  };
+}
+
+/**
+ * ✅ UPDATED preview:
+ * - Always returns preview for what can be placed (min(requested, maxCapacity))
+ * - Also returns maxCartons capacity so UI can show "how many can fit in remaining space"
+ */
+export function previewForRow({
+  row,
+  buyer,
+  cartonDimCm,
+  cartonQty,
+  priorAllocations = [],
+  manualOrientation,
+  manualAcross,
+}) {
+  const cap = computeMaxAllocatableCartons({
+    row,
+    buyer,
+    cartonDimCm,
+    priorAllocations,
+    manualOrientation,
+    manualAcross,
+  });
+
+  if (!cap.ok) return { ok: false, reason: cap.reason };
+
+  const metrics = cap.metrics;
+  const requestedCartons = Number(cartonQty);
+
+  const maxCartons = Number(cap.maxCartons || 0);
+  const placedTarget = Math.max(0, Math.min(requestedCartons, maxCartons));
+  const unplacedCartons = Math.max(0, requestedCartons - placedTarget);
+  const extraCapacity = Math.max(0, maxCartons - requestedCartons);
+
+  // still show capacity even if nothing can be placed
+  if (maxCartons <= 0) {
+    return {
+      ok: true,
+      rowId: String(row._id),
+      rowName: row.name,
+      rowType: row.type,
+      warehouse: row.warehouse,
+      capacity: {
+        maxCartons: 0,
+        requestedCartons,
+        placedCartons: 0,
+        unplacedCartons: requestedCartons,
+        extraCapacity: 0,
+      },
+      metrics: {
+        ...metrics,
+        rowTotalLengthCm: 0,
+        rowStartAtCm: 0,
+        rowEndAtCm: 0,
+        rowRemainingAfterCm: 0,
+      },
+      segmentsMeta: [],
+      columnsBySegment: [],
+      cells: [],
+      partial: requestedCartons > 0,
+      note: "No free columns available in remaining gaps for this carton depth.",
+    };
+  }
+
+  const segs =
+    row.type === "continuous"
+      ? [{ segmentIndex: 0, lengthCm: Number(row.lengthCm || 0) }]
       : (row.segments || []).map((s, i) => ({ segmentIndex: i, lengthCm: Number(s.lengthCm || 0) }));
 
+  // segment start positions (including pillar gaps)
   const segStarts = [];
   let cursor = 0;
   for (let i = 0; i < segs.length; i++) {
@@ -129,78 +381,73 @@ export function previewForRow({ row, buyer, cartonDimCm, cartonQty, priorAllocat
   }
   const rowTotalLengthCm = cursor;
 
-  const usedBySeg = new Map();
-  for (const a of priorAllocations) {
-    if (Array.isArray(a.segmentsMeta) && a.segmentsMeta.length > 0) {
-      for (const m of a.segmentsMeta) {
-        const idx = Number(m.segmentIndex);
-        const reserved = Number(m.allocatedLenCm || 0);
-        usedBySeg.set(idx, (usedBySeg.get(idx) || 0) + reserved);
-      }
-    } else {
-      for (const s of a.columnsBySegment || []) {
-        usedBySeg.set(
-          Number(s.segmentIndex),
-          (usedBySeg.get(Number(s.segmentIndex)) || 0) + Number(s.lengthUsedCm || 0)
-        );
-      }
-    }
-  }
+  const occupiedBySeg = buildOccupiedBySegment({
+    priorAllocations,
+    segStarts,
+  });
 
-  let remainingCartons = Number(cartonQty);
+  let remainingCartons = placedTarget; // ✅ place only what fits
   const segmentsPlan = [];
   const segmentsMeta = [];
 
   for (let i = 0; i < segs.length; i++) {
     const seg = segs[i];
+    const segmentIndex = seg.segmentIndex;
     const segmentStartCm = segStarts[i];
 
-    const usedBeforeCm = usedBySeg.get(seg.segmentIndex) || 0;
-    const freeLength = Math.max(0, seg.lengthCm - usedBeforeCm);
+    const occupiedMerged = occupiedBySeg.get(segmentIndex) || [];
+    const gaps = freeRanges(seg.lengthCm, occupiedMerged);
 
-    const columnsFit = Math.floor(freeLength / metrics.columnDepthCm);
-    const segCapacity = columnsFit * metrics.perColumnCapacity;
+    for (const [gapStart, gapEnd] of gaps) {
+      if (remainingCartons <= 0) break;
 
-    if (columnsFit <= 0 || segCapacity <= 0) continue;
+      const freeLength = Math.max(0, gapEnd - gapStart);
+      const columnsFit = Math.floor(freeLength / metrics.columnDepthCm);
+      const segCapacity = columnsFit * metrics.perColumnCapacity;
 
-    const qtyPlaced = Math.min(remainingCartons, segCapacity);
-    const columnsUsed = ceilDiv(qtyPlaced, metrics.perColumnCapacity);
-    const lengthUsedCm = columnsUsed * metrics.columnDepthCm;
+      if (columnsFit <= 0 || segCapacity <= 0) continue;
 
-    const tail = seg.lengthCm - usedBeforeCm - lengthUsedCm;
-    const wastedTailCm = tail > 0 && tail < metrics.columnDepthCm ? tail : 0;
+      const qtyPlaced = Math.min(remainingCartons, segCapacity);
+      const columnsUsed = ceilDiv(qtyPlaced, metrics.perColumnCapacity);
+      const lengthUsedCm = columnsUsed * metrics.columnDepthCm;
 
-    const allocatedLenCm = lengthUsedCm + wastedTailCm;
-    const startFromRowStartCm = segmentStartCm + usedBeforeCm;
-    const endFromRowStartCm = startFromRowStartCm + allocatedLenCm;
-    const remainingAfterCm = seg.lengthCm - usedBeforeCm - allocatedLenCm;
+      const tail = freeLength - lengthUsedCm;
+      const wastedTailCm = tail > 0 && tail < metrics.columnDepthCm ? tail : 0;
 
-    segmentsPlan.push({
-      segmentIndex: seg.segmentIndex,
-      columnsUsed,
-      qtyPlaced,
-      lengthUsedCm,
-    });
+      const allocatedLenCm = lengthUsedCm + wastedTailCm; // always <= freeLength
+      const startFromRowStartCm = segmentStartCm + gapStart;
+      const endFromRowStartCm = startFromRowStartCm + allocatedLenCm;
 
-    segmentsMeta.push({
-      segmentIndex: seg.segmentIndex,
-      segmentStartCm,
-      segmentLengthCm: seg.lengthCm,
-      usedBeforeCm,
-      startFromRowStartCm,
-      allocatedLenCm,
-      endFromRowStartCm,
-      remainingAfterCm,
-      wastedTailCm,
-    });
+      const remainingAfterCm = seg.lengthCm - (gapStart + allocatedLenCm);
 
-    remainingCartons -= qtyPlaced;
+      segmentsPlan.push({
+        segmentIndex,
+        columnsUsed,
+        qtyPlaced,
+        lengthUsedCm,
+        startInSegmentCm: gapStart,
+      });
+
+      segmentsMeta.push({
+        segmentIndex,
+        segmentStartCm,
+        segmentLengthCm: seg.lengthCm,
+        usedBeforeCm: gapStart,
+        startFromRowStartCm,
+        allocatedLenCm,
+        endFromRowStartCm,
+        remainingAfterCm,
+        wastedTailCm,
+      });
+
+      remainingCartons -= qtyPlaced;
+      if (remainingCartons <= 0) break;
+    }
+
     if (remainingCartons <= 0) break;
   }
 
-  if (remainingCartons > 0) {
-    return { ok: false, reason: "Not enough free length in this row (after existing allocations)." };
-  }
+  const placedCartons = placedTarget - Math.max(0, remainingCartons);
 
   const rowStartAtCm = segmentsMeta[0]?.startFromRowStartCm ?? 0;
   const rowEndAtCm = segmentsMeta[segmentsMeta.length - 1]?.endFromRowStartCm ?? 0;
@@ -210,7 +457,7 @@ export function previewForRow({ row, buyer, cartonDimCm, cartonQty, priorAllocat
     segmentsPlan,
     across: metrics.across,
     layers: metrics.layers,
-    qtyTotal: cartonQty,
+    qtyTotal: placedCartons, // ✅ snapshot only what is actually placed
   });
 
   return {
@@ -219,6 +466,16 @@ export function previewForRow({ row, buyer, cartonDimCm, cartonQty, priorAllocat
     rowName: row.name,
     rowType: row.type,
     warehouse: row.warehouse,
+
+    capacity: {
+      maxCartons,
+      requestedCartons,
+      placedCartons,
+      unplacedCartons,
+      extraCapacity,
+      freeLengthTotalCm: cap.freeLengthTotalCm,
+      freeColumnsTotal: cap.freeColumnsTotal,
+    },
 
     metrics: {
       ...metrics,
@@ -229,13 +486,17 @@ export function previewForRow({ row, buyer, cartonDimCm, cartonQty, priorAllocat
     },
 
     segmentsMeta,
+
     columnsBySegment: segmentsPlan.map((s) => ({
       segmentIndex: s.segmentIndex,
       columnsUsed: s.columnsUsed,
       qtyPlaced: s.qtyPlaced,
       lengthUsedCm: s.lengthUsedCm,
+      startInSegmentCm: s.startInSegmentCm,
     })),
 
     cells,
+
+    partial: unplacedCartons > 0,
   };
 }

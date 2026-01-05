@@ -10,7 +10,6 @@ import {
   Ruler,
   Package,
   BarChart3,
-  ArrowRight,
 } from "lucide-react";
 
 function colorFromKey(key) {
@@ -45,44 +44,6 @@ function formatDate(dt) {
   } catch {
     return String(dt);
   }
-}
-
-/** Normalize orientation values coming from DB/API */
-function normalizeOrientation(v) {
-  const s = String(v || "").trim().toUpperCase();
-  if (!s) return "";
-  if (s.includes("LENGTH")) return "LENGTH_WISE";
-  if (s.includes("WIDTH")) return "WIDTH_WISE";
-  return s; // fallback
-}
-
-/** Human friendly label + explanation */
-function orientationUI(v) {
-  const o = normalizeOrientation(v);
-  if (o === "LENGTH_WISE") {
-    return {
-      code: "LENGTH_WISE",
-      label: "Length-wise",
-      explain:
-        "L goes into row depth, W stays across row width",
-      mini: "L → depth",
-    };
-  }
-  if (o === "WIDTH_WISE") {
-    return {
-      code: "WIDTH_WISE",
-      label: "Width-wise",
-      explain:
-        "W goes into row depth, L stays across row width",
-      mini: "W → depth",
-    };
-  }
-  return {
-    code: o || "N/A",
-    label: o || "N/A",
-    explain: "",
-    mini: "",
-  };
 }
 
 function allocBlocksFromAllocations(allocations = [], entriesMap = new Map()) {
@@ -176,53 +137,51 @@ export default function GraphicalPane({ warehouse, selectedRowId, preview }) {
   // ✅ Avoid re-render if nothing changed
   const lastSigRef = useRef("");
 
-  const load = useCallback(
-    async (signal) => {
-      setLoading(true);
-      try {
-        const headers = { "Cache-Control": "no-cache" };
+  const load = useCallback(async (signal) => {
+    setLoading(true);
+    try {
+      const headers = { "Cache-Control": "no-cache" };
 
-        const [r, a, e] = await Promise.all([
-          fetch(`/api/rows?warehouse=${warehouse}`, { signal, headers, cache: "no-store" }),
-          fetch(`/api/allocations?warehouse=${warehouse}`, { signal, headers, cache: "no-store" }),
-          fetch(`/api/entries?warehouse=${warehouse}`, { signal, headers, cache: "no-store" }),
-        ]);
+      const [r, a, e] = await Promise.all([
+        fetch(`/api/rows?warehouse=${warehouse}`, { signal, headers, cache: "no-store" }),
+        fetch(`/api/allocations?warehouse=${warehouse}`, { signal, headers, cache: "no-store" }),
+        fetch(`/api/entries?warehouse=${warehouse}`, { signal, headers, cache: "no-store" }),
+      ]);
 
-        const [rd, ad, ed] = await Promise.all([r.json(), a.json(), e.json()]);
+      const [rd, ad, ed] = await Promise.all([r.json(), a.json(), e.json()]);
 
-        const nextRows = rd.rows || [];
-        const nextAllocs = ad.allocations || [];
-        const nextEntries = ed.entries || [];
+      const nextRows = rd.rows || [];
+      const nextAllocs = ad.allocations || [];
+      const nextEntries = ed.entries || [];
 
-        // Signature: changes when newest allocation/entry changes
-        const sig = [
-          warehouse,
-          nextRows.length,
-          nextAllocs.length,
-          nextAllocs[0]?._id || "",
-          nextAllocs[0]?.updatedAt || nextAllocs[0]?.createdAt || "",
-          nextEntries.length,
-          nextEntries[0]?._id || "",
-          nextEntries[0]?.updatedAt || nextEntries[0]?.createdAt || "",
-        ].join("|");
+      // Signature: changes when newest allocation/entry changes
+      const sig = [
+        warehouse,
+        nextRows.length,
+        nextAllocs.length,
+        nextAllocs[0]?._id || "",
+        nextEntries.length,
+        nextEntries[0]?._id || "",
+        nextEntries[0]?.updatedAt || "",
+        nextAllocs[0]?.createdAt || "",
+      ].join("|");
 
-        if (sig !== lastSigRef.current) {
-          lastSigRef.current = sig;
-          setRows(nextRows);
-          setAllocations(nextAllocs);
-          setEntries(nextEntries);
-          setLastUpdated(new Date());
-        }
-      } catch (err) {
-        if (err?.name !== "AbortError") {
-          // console.error(err);
-        }
-      } finally {
-        setLoading(false);
+      if (sig !== lastSigRef.current) {
+        lastSigRef.current = sig;
+        setRows(nextRows);
+        setAllocations(nextAllocs);
+        setEntries(nextEntries);
+        setLastUpdated(new Date());
       }
-    },
-    [warehouse]
-  );
+    } catch (err) {
+      if (err?.name !== "AbortError") {
+        // keep quiet UI; you can console.log if needed
+        // console.error(err);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [warehouse]);
 
   // ✅ Auto refresh: polling + refresh on focus
   useEffect(() => {
@@ -310,7 +269,8 @@ export default function GraphicalPane({ warehouse, selectedRowId, preview }) {
                   {" "}
                   • Updated: <span className="font-semibold">{lastUpdated.toLocaleTimeString()}</span>
                 </>
-              ) : null}{" "}
+              ) : null}
+              {" "}
               • Auto refresh every 8s
             </div>
           </div>
@@ -355,19 +315,6 @@ export default function GraphicalPane({ warehouse, selectedRowId, preview }) {
 
 function RowCard({ row, allocations, preview, selected, stats, buyerStats, entriesMap }) {
   const buyerRows = Array.from(buyerStats.entries()).sort((a, b) => b[1].lengthCm - a[1].lengthCm);
-
-  // ✅ Orientation summary (stored allocations)
-  const orientationSummary = useMemo(() => {
-    const sum = { LENGTH_WISE: 0, WIDTH_WISE: 0, OTHER: 0 };
-    for (const a of allocations) {
-      const o = normalizeOrientation(a.orientation || a.manualOrientation);
-      const qty = n(a.qtyTotal);
-      if (o === "LENGTH_WISE") sum.LENGTH_WISE += qty;
-      else if (o === "WIDTH_WISE") sum.WIDTH_WISE += qty;
-      else sum.OTHER += qty;
-    }
-    return sum;
-  }, [allocations]);
 
   return (
     <div
@@ -414,28 +361,6 @@ function RowCard({ row, allocations, preview, selected, stats, buyerStats, entri
             {stats.cbm.toFixed(3)} cbm
           </div>
 
-          {/* ✅ User-friendly orientation info */}
-          {(orientationSummary.LENGTH_WISE > 0 || orientationSummary.WIDTH_WISE > 0) && (
-            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-              {orientationSummary.LENGTH_WISE > 0 && (
-                <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 font-extrabold text-slate-800">
-                  <ArrowRight className="h-3.5 w-3.5 text-slate-600" />
-                  Stored: <span className="text-slate-900">Length-wise</span>
-                  <span className="text-slate-500">(L → depth)</span>
-                  <span className="text-slate-600">• {orientationSummary.LENGTH_WISE} cartons</span>
-                </span>
-              )}
-              {orientationSummary.WIDTH_WISE > 0 && (
-                <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 font-extrabold text-slate-800">
-                  <ArrowRight className="h-3.5 w-3.5 text-slate-600" />
-                  Stored: <span className="text-slate-900">Width-wise</span>
-                  <span className="text-slate-500">(W → depth)</span>
-                  <span className="text-slate-600">• {orientationSummary.WIDTH_WISE} cartons</span>
-                </span>
-              )}
-            </div>
-          )}
-
           {buyerRows.length > 0 ? (
             <div className="mt-3">
               <div className="mb-2 flex items-center gap-2 text-sm font-extrabold text-slate-900">
@@ -458,12 +383,11 @@ function RowCard({ row, allocations, preview, selected, stats, buyerStats, entri
         </div>
 
         {preview?.metrics ? (
-          <div className="min-w-[240px] rounded-2xl border border-slate-200 bg-white p-3">
+          <div className="min-w-[220px] rounded-2xl border border-slate-200 bg-white p-3">
             <div className="mb-2 flex items-center gap-2 text-sm font-extrabold text-slate-900">
               <Info className="h-4 w-4 text-slate-700" />
               Preview
             </div>
-
             <div className="grid gap-1 text-sm text-slate-700">
               <div>
                 <span className="font-semibold">Start:</span> {preview.metrics.rowStartAtCm} cm
@@ -474,24 +398,6 @@ function RowCard({ row, allocations, preview, selected, stats, buyerStats, entri
               <div>
                 <span className="font-semibold">Remaining:</span> {preview.metrics.rowRemainingAfterCm} cm
               </div>
-
-              {/* ✅ Preview orientation user-friendly */}
-              {preview.metrics.orientation ? (
-                <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700">
-                  {(() => {
-                    const o = orientationUI(preview.metrics.orientation);
-                    return (
-                      <>
-                        <div className="font-extrabold text-slate-900">
-                          Orientation: {o.label}{" "}
-                          <span className="font-bold text-slate-500">({o.mini})</span>
-                        </div>
-                        {o.explain ? <div className="mt-0.5 text-slate-600">{o.explain}</div> : null}
-                      </>
-                    );
-                  })()}
-                </div>
-              ) : null}
             </div>
           </div>
         ) : null}
@@ -629,7 +535,16 @@ function RowBar({ row, allocations, preview, buyerStats, entriesMap, colorMode =
         </defs>
 
         {/* base */}
-        <rect x="0" y={y} width={W} height={h} fill="url(#segmentGradient)" stroke="#0f172a" strokeWidth="2" rx="14">
+        <rect
+          x="0"
+          y={y}
+          width={W}
+          height={h}
+          fill="url(#segmentGradient)"
+          stroke="#0f172a"
+          strokeWidth="2"
+          rx="14"
+        >
           <title>{baseTip}</title>
         </rect>
 
@@ -650,7 +565,14 @@ function RowBar({ row, allocations, preview, buyerStats, entriesMap, colorMode =
                 <title>{tip}</title>
               </rect>
               <rect x={r.segX} y={y} width={r.segW} height={h} fill="transparent" stroke="#cbd5e1" strokeWidth="1" />
-              <text x={r.segX + r.segW / 2} y={y + h / 2 + 4} textAnchor="middle" fontSize="11" fontWeight="800" fill="#334155">
+              <text
+                x={r.segX + r.segW / 2}
+                y={y + h / 2 + 4}
+                textAnchor="middle"
+                fontSize="11"
+                fontWeight="800"
+                fill="#334155"
+              >
                 {r.segLen} cm
               </text>
             </g>
@@ -669,15 +591,6 @@ function RowBar({ row, allocations, preview, buyerStats, entriesMap, colorMode =
             const entry = b.entry || {};
             const alloc = b.allocation || {};
             const dim = entry.cartonDimCm || alloc.cartonDimCm || {};
-            const o = orientationUI(alloc.orientation || alloc.manualOrientation);
-
-            // ✅ USER FRIENDLY ORIENTATION TEXT
-            const orientationLine =
-              o.code === "N/A"
-                ? "Orientation: N/A"
-                : `Orientation: ${o.label} (${o.mini})`;
-
-            const orientationExplain = o.explain ? `Meaning: ${o.explain}` : "";
 
             const tip = [
               `Entry: ${entry.code || "N/A"}`,
@@ -695,15 +608,11 @@ function RowBar({ row, allocations, preview, buyerStats, entriesMap, colorMode =
               `---`,
               `Start: ${b.start} cm → End: ${b.end} cm`,
               `Reserved: ${b.len} cm${b.usedLen ? ` | Used: ${b.usedLen} cm` : ""}${b.wastedTail ? ` | Wasted: ${b.wastedTail} cm` : ""}`,
-              orientationLine,
-              orientationExplain,
-              `Across: ${alloc.across || "N/A"} | Layers: ${alloc.layers || "N/A"}`,
+              `Orientation: ${alloc.orientation || "N/A"} | Across: ${alloc.across || "N/A"} | Layers: ${alloc.layers || "N/A"}`,
               `Depth/Column: ${alloc.columnDepthCm || "N/A"} cm`,
               `---`,
               `Created: ${formatDate(entry.createdAt)} | Status: ${entry.status || "N/A"}`,
-            ]
-              .filter(Boolean)
-              .join("\n");
+            ].join("\n");
 
             return (
               <rect
@@ -766,7 +675,7 @@ function RowBar({ row, allocations, preview, buyerStats, entriesMap, colorMode =
         </text>
       </svg>
 
-      {/* legend */}
+      {/* tiny legend */}
       <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-600">
         <span className="inline-flex items-center gap-1">
           <Package className="h-4 w-4 text-slate-500" />

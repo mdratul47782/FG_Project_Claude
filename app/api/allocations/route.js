@@ -56,6 +56,18 @@ export async function POST(req) {
 
   if (!preview.ok) return Response.json({ ok: false, message: preview.reason }, { status: 400 });
 
+  // ✅ IMPORTANT: do NOT allow partial save
+  if (preview?.capacity?.unplacedCartons > 0) {
+    return Response.json(
+      {
+        ok: false,
+        message: `Not enough space. Max fits: ${preview.capacity.maxCartons} cartons, requested: ${preview.capacity.requestedCartons}.`,
+        capacity: preview.capacity,
+      },
+      { status: 400 }
+    );
+  }
+
   const alloc = await Allocation.create({
     entryId: entry._id,
     rowId: row._id,

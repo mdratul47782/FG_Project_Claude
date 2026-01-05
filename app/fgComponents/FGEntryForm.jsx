@@ -1,7 +1,7 @@
 // app/fgComponents/FGEntryForm.jsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import GraphicalPane from "./GraphicalPane";
 import {
   Building2,
@@ -34,19 +34,34 @@ const BUYERS = [
   "Fifth Avenur",
 ];
 
+const FLOORS = ["A-2", "B-2", "A-3", "B-3", "A-4", "B-4", "A-5", "B-5"];
+
 function n(v) {
   const x = Number(v);
   return Number.isFinite(x) ? x : 0;
 }
 
+// ✅ Debounce any value (string/number) to avoid preview on partial typing
+function useDebouncedValue(value, delay = 650) {
+  const [debounced, setDebounced] = useState(value);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+
+  return debounced;
+}
+
 // Mock auth - replace with actual auth context
 const mockAuth = {
-  assigned_building: "A-2",
   factory: "K-2",
 };
 
 export default function FGEntryForm() {
-  const [floor] = useState(mockAuth.assigned_building);
+  // ✅ FLOOR = manual dropdown
+  const [floor, setFloor] = useState(FLOORS[0]);
+
   const [warehouse, setWarehouse] = useState("B1");
   const [buyer, setBuyer] = useState(BUYERS[0]);
 
@@ -61,16 +76,28 @@ export default function FGEntryForm() {
   const [color, setColor] = useState("");
   const [size, setSize] = useState("");
 
-  const [pcsPerCarton, setPcsPerCarton] = useState(0);
-  const [cartonQty, setCartonQty] = useState(0);
-  const [w, setW] = useState(0);
-  const [l, setL] = useState(0);
-  const [h, setH] = useState(0);
-  const [fobPerPcs, setFobPerPcs] = useState(0);
+  // ✅ Keep inputs as strings to allow typing (4 -> 40) without forcing preview early
+  const [pcsPerCarton, setPcsPerCarton] = useState("");
+  const [cartonQty, setCartonQty] = useState("");
+  const [w, setW] = useState("");
+  const [l, setL] = useState("");
+  const [h, setH] = useState("");
+  const [fobPerPcs, setFobPerPcs] = useState("");
 
   // Manual orientation controls
   const [manualOrientation, setManualOrientation] = useState("LENGTH_WISE");
   const [manualAcross, setManualAcross] = useState(2);
+
+  // ✅ Debounced values (preview uses ONLY these, not raw typing)
+  const dCartonQty = useDebouncedValue(cartonQty, 650);
+  const dW = useDebouncedValue(w, 650);
+  const dL = useDebouncedValue(l, 650);
+  const dH = useDebouncedValue(h, 650);
+
+  // ✅ If user is typing, we hide preview so it never shows wrong suggestion for "4"
+  const isTypingDimsOrQty = useMemo(() => {
+    return cartonQty !== dCartonQty || w !== dW || l !== dL || h !== dH;
+  }, [cartonQty, dCartonQty, w, dW, l, dL, h, dH]);
 
   const totalQty = useMemo(() => n(pcsPerCarton) * n(cartonQty), [pcsPerCarton, cartonQty]);
   const perCartonCbm = useMemo(() => (n(w) * n(l) * n(h)) / 1_000_000, [w, l, h]);
@@ -80,6 +107,11 @@ export default function FGEntryForm() {
   const [preview, setPreview] = useState(null);
   const [previewErr, setPreviewErr] = useState("");
   const [saving, setSaving] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  // ✅ Prevent race condition (old request overwriting new)
+  const previewReqIdRef = useRef(0);
+  const previewCtrlRef = useRef(null);
 
   const previewColumnsUsed = useMemo(() => {
     if (!preview?.columnsBySegment) return 0;
@@ -87,14 +119,17 @@ export default function FGEntryForm() {
   }, [preview]);
 
   const previewCartonsPlaced = useMemo(() => {
+    if (preview?.capacity?.placedCartons != null) return n(preview.capacity.placedCartons);
     if (!preview?.columnsBySegment) return 0;
     return preview.columnsBySegment.reduce((sum, s) => sum + n(s.qtyPlaced), 0);
   }, [preview]);
 
-  const previewAllocatedCbm = useMemo(
-    () => perCartonCbm * previewCartonsPlaced,
-    [perCartonCbm, previewCartonsPlaced]
-  );
+  const previewAllocatedCbm = useMemo(() => perCartonCbm * previewCartonsPlaced, [perCartonCbm, previewCartonsPlaced]);
+
+  const maxFits = useMemo(() => n(preview?.capacity?.maxCartons), [preview]);
+  const requested = useMemo(() => n(preview?.capacity?.requestedCartons ?? n(dCartonQty)), [preview, dCartonQty]);
+  const unplaced = useMemo(() => n(preview?.capacity?.unplacedCartons), [preview]);
+  const moreCanFit = useMemo(() => Math.max(0, maxFits - requested), [maxFits, requested]);
 
   async function loadRows() {
     const res = await fetch(`/api/rows?warehouse=${warehouse}`);
@@ -109,43 +144,94 @@ export default function FGEntryForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [warehouse]);
 
+  // ✅ When typing dims/qty, clear preview so user never sees wrong intermediate allocation
+  useEffect(() => {
+    if (isTypingDimsOrQty) {
+      setPreview(null);
+      setPreviewErr("");
+      setPreviewLoading(false);
+      if (previewCtrlRef.current) previewCtrlRef.current.abort();
+    }
+  }, [isTypingDimsOrQty]);
+
   async function loadPreview() {
+    // if still typing, skip
+    if (isTypingDimsOrQty) return;
+
     setPreview(null);
     setPreviewErr("");
 
     if (!rowId) return;
     if (!buyer) return;
-    if (n(cartonQty) <= 0) return;
-    if (n(w) <= 0 || n(l) <= 0 || n(h) <= 0) return;
 
-    const res = await fetch("/api/allocations/preview", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        rowId,
-        buyer,
-        cartonQty: n(cartonQty),
-        cartonDimCm: { w: n(w), l: n(l), h: n(h) },
-        manualOrientation,
-        manualAcross: n(manualAcross),
-      }),
-    });
+    const qty = n(dCartonQty);
+    const ww = n(dW);
+    const ll = n(dL);
+    const hh = n(dH);
 
-    const data = await res.json();
-    if (!data.ok) {
-      setPreviewErr(data.message || "Preview failed");
-      return;
+    if (qty <= 0) return;
+    if (ww <= 0 || ll <= 0 || hh <= 0) return;
+
+    // ✅ abort previous request
+    if (previewCtrlRef.current) previewCtrlRef.current.abort();
+    const ctrl = new AbortController();
+    previewCtrlRef.current = ctrl;
+
+    const reqId = ++previewReqIdRef.current;
+    setPreviewLoading(true);
+
+    try {
+      const res = await fetch("/api/allocations/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: ctrl.signal,
+        body: JSON.stringify({
+          rowId,
+          buyer,
+          cartonQty: qty,
+          cartonDimCm: { w: ww, l: ll, h: hh },
+          manualOrientation,
+          manualAcross: n(manualAcross),
+        }),
+      });
+
+      const data = await res.json();
+
+      // ✅ ignore stale responses
+      if (reqId !== previewReqIdRef.current) return;
+
+      if (!data.ok) {
+        setPreviewErr(data.message || "Preview failed");
+        setPreview(null);
+        return;
+      }
+
+      setPreview(data.preview);
+
+      if (data.preview?.capacity?.unplacedCartons > 0) {
+        setPreviewErr(
+          `Not enough space. Max fits: ${data.preview.capacity.maxCartons} cartons. Reduce qty or choose another row.`
+        );
+      } else {
+        setPreviewErr("");
+      }
+    } catch (e) {
+      if (e?.name !== "AbortError") {
+        setPreviewErr("Preview failed");
+      }
+    } finally {
+      if (reqId === previewReqIdRef.current) setPreviewLoading(false);
     }
-    setPreview(data.preview);
   }
 
+  // ✅ preview triggers ONLY after debounced dims/qty settle
   useEffect(() => {
-    const t = setTimeout(loadPreview, 250);
-    return () => clearTimeout(t);
+    loadPreview();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rowId, buyer, cartonQty, w, l, h, manualOrientation, manualAcross]);
+  }, [rowId, buyer, dCartonQty, dW, dL, dH, manualOrientation, manualAcross]);
 
   function resetForm() {
+    setFloor(FLOORS[0]);
     setSeason("");
     setPoNumber("");
     setStyle("");
@@ -153,24 +239,28 @@ export default function FGEntryForm() {
     setItem("");
     setColor("");
     setSize("");
-    setPcsPerCarton(0);
-    setCartonQty(0);
-    setW(0);
-    setL(0);
-    setH(0);
-    setFobPerPcs(0);
+    setPcsPerCarton("");
+    setCartonQty("");
+    setW("");
+    setL("");
+    setH("");
+    setFobPerPcs("");
     setManualOrientation("LENGTH_WISE");
     setManualAcross(2);
     setPreview(null);
     setPreviewErr("");
+    setPreviewLoading(false);
   }
 
   async function handleSave() {
     setSaving(true);
     try {
       if (!preview?.rowId) throw new Error("No valid preview for this row.");
+      if (preview?.capacity?.unplacedCartons > 0) {
+        throw new Error(`Only ${preview.capacity.maxCartons} cartons fit in remaining space. Reduce qty.`);
+      }
 
-      // 1) Save Entry with auth info
+      // 1) Save Entry
       const entryRes = await fetch("/api/entries", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -191,7 +281,6 @@ export default function FGEntryForm() {
           fobPerPcs: n(fobPerPcs),
           status: "DRAFT",
           factory: mockAuth.factory,
-          assigned_building: mockAuth.assigned_building,
         }),
       });
 
@@ -218,7 +307,6 @@ export default function FGEntryForm() {
       );
 
       resetForm();
-      await loadPreview();
     } catch (e) {
       alert("Error: " + e.message);
     } finally {
@@ -226,7 +314,7 @@ export default function FGEntryForm() {
     }
   }
 
-  const canSave = !!preview?.rowId && !saving;
+  const canSave = !!preview?.rowId && !saving && n(preview?.capacity?.unplacedCartons) === 0;
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -235,24 +323,27 @@ export default function FGEntryForm() {
         <div className="mb-4 flex items-start justify-between gap-4">
           <div>
             <h2 className="text-lg font-extrabold text-slate-900">Entry Form</h2>
-            <p className="mt-1 text-xs text-slate-500">
-              Fill details, choose row, set orientation, and preview placement.
-            </p>
+            <p className="mt-1 text-xs text-slate-500">Fill details, choose row, set orientation, and preview placement.</p>
           </div>
 
           <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
             <Building2 className="h-4 w-4 text-slate-700" />
             <div className="text-xs">
-              <div className="font-semibold text-slate-900">{mockAuth.assigned_building}</div>
-              <div className="text-slate-500">Factory: {mockAuth.factory}</div>
+              <div className="font-semibold text-slate-900">Factory: {mockAuth.factory}</div>
+              <div className="text-slate-500">Floor: {floor}</div>
             </div>
           </div>
         </div>
 
-        {/* Form grid */}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field icon={Building2} label="Floor (auto)">
-            <input className="input" value={floor} disabled />
+          <Field icon={Building2} label="Floor">
+            <select className="input" value={floor} onChange={(e) => setFloor(e.target.value)}>
+              {FLOORS.map((f) => (
+                <option key={f} value={f}>
+                  {f}
+                </option>
+              ))}
+            </select>
           </Field>
 
           <Field icon={Warehouse} label="Warehouse">
@@ -320,39 +411,42 @@ export default function FGEntryForm() {
           <Field icon={Package} label="Pcs per Carton">
             <input
               className="input"
-              type="number"
+              inputMode="numeric"
               value={pcsPerCarton}
               onChange={(e) => setPcsPerCarton(e.target.value)}
+              placeholder="e.g. 24"
             />
           </Field>
 
           <Field icon={Package} label="Carton Qty">
             <input
               className="input"
-              type="number"
+              inputMode="numeric"
               value={cartonQty}
               onChange={(e) => setCartonQty(e.target.value)}
+              placeholder="e.g. 120"
             />
           </Field>
 
           <Field icon={Ruler} label="Carton W (cm)">
-            <input className="input" type="number" value={w} onChange={(e) => setW(e.target.value)} />
+            <input className="input" inputMode="numeric" value={w} onChange={(e) => setW(e.target.value)} placeholder="e.g. 40" />
           </Field>
 
           <Field icon={Ruler} label="Carton L (cm)">
-            <input className="input" type="number" value={l} onChange={(e) => setL(e.target.value)} />
+            <input className="input" inputMode="numeric" value={l} onChange={(e) => setL(e.target.value)} placeholder="e.g. 60" />
           </Field>
 
           <Field icon={Ruler} label="Carton H (cm)">
-            <input className="input" type="number" value={h} onChange={(e) => setH(e.target.value)} />
+            <input className="input" inputMode="numeric" value={h} onChange={(e) => setH(e.target.value)} placeholder="e.g. 50" />
           </Field>
 
           <Field icon={Tag} label="FOB (per pcs)">
             <input
               className="input"
-              type="number"
+              inputMode="decimal"
               value={fobPerPcs}
               onChange={(e) => setFobPerPcs(e.target.value)}
+              placeholder="e.g. 1.25"
             />
           </Field>
 
@@ -372,29 +466,6 @@ export default function FGEntryForm() {
           </Field>
         </div>
 
-        {/* Orientation Diagram */}
-        <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Layers className="h-4 w-4 text-slate-700" />
-              <div className="text-sm font-extrabold text-slate-900">Orientation Preview</div>
-            </div>
-            <div className="text-xs text-slate-600">
-              {manualOrientation === "LENGTH_WISE" ? "Length-wise" : "Width-wise"} • Across:{" "}
-              <span className="font-bold text-slate-900">{manualAcross}</span>
-            </div>
-          </div>
-
-          <OrientationDiagram
-            orientation={manualOrientation}
-            across={manualAcross}
-            cartonW={n(w)}
-            cartonL={n(l)}
-            rowWidth={120}
-          />
-        </div>
-
-        {/* KPIs */}
         <div className="mt-4 grid grid-cols-2 gap-3">
           <KPI label="Total Qty" value={totalQty} />
           <KPI label="Per Carton CBM" value={perCartonCbm.toFixed(6)} />
@@ -402,15 +473,12 @@ export default function FGEntryForm() {
           <KPI label="Total FOB" value={totalFob.toFixed(2)} />
         </div>
 
-        {/* Actions */}
         <div className="mt-5 flex flex-wrap gap-3">
           <button
             onClick={handleSave}
             disabled={!canSave}
             className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-extrabold transition ${
-              canSave
-                ? "bg-slate-900 text-white hover:bg-slate-800"
-                : "cursor-not-allowed bg-slate-200 text-slate-500"
+              canSave ? "bg-slate-900 text-white hover:bg-slate-800" : "cursor-not-allowed bg-slate-200 text-slate-500"
             }`}
           >
             <Save className="h-4 w-4" />
@@ -432,11 +500,29 @@ export default function FGEntryForm() {
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div className="text-lg font-extrabold text-slate-900">Placement Info</div>
-            {preview?.metrics ? (
-              <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
-                <CheckCircle2 className="h-4 w-4" />
-                Preview OK
+
+            {isTypingDimsOrQty ? (
+              <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
+                <AlertCircle className="h-4 w-4" />
+                Typing...
               </div>
+            ) : previewLoading ? (
+              <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
+                <AlertCircle className="h-4 w-4" />
+                Updating...
+              </div>
+            ) : preview?.metrics ? (
+              unplaced > 0 ? (
+                <div className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800">
+                  <AlertCircle className="h-4 w-4" />
+                  Partial
+                </div>
+              ) : (
+                <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Preview OK
+                </div>
+              )
             ) : (
               <div className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800">
                 <AlertCircle className="h-4 w-4" />
@@ -448,28 +534,40 @@ export default function FGEntryForm() {
           {preview?.metrics ? (
             <>
               <div className="grid grid-cols-2 gap-3">
+                <KPI label="Max Fit in Remaining (Cartons)" value={maxFits || 0} />
+                <KPI label="Requested (Cartons)" value={requested || 0} />
+                <KPI label="Placed Now (Cartons)" value={previewCartonsPlaced} />
+                <KPI label="Unplaced (Cartons)" value={unplaced || 0} />
+
+                <KPI label="More Can Fit (if you want)" value={moreCanFit || 0} />
+                <KPI label="Columns Used" value={previewColumnsUsed} />
+
                 <KPI label="Row Start (cm)" value={preview.metrics.rowStartAtCm} />
                 <KPI label="Row End (cm)" value={preview.metrics.rowEndAtCm} />
                 <KPI label="Remaining Length (cm)" value={preview.metrics.rowRemainingAfterCm} />
+
                 <KPI label="Allocated Height (cm)" value={preview.metrics.allocatedHeightCm} />
                 <KPI label="Remaining Height (cm)" value={preview.metrics.remainingHeightCm} />
                 <KPI label="Across" value={preview.metrics.across} />
                 <KPI label="Layers" value={preview.metrics.layers} />
                 <KPI label="Column Depth (cm)" value={preview.metrics.columnDepthCm} />
-                <KPI label="Columns Used" value={previewColumnsUsed} />
                 <KPI label="Cartons / Column" value={preview.metrics.perColumnCapacity} />
-                <KPI label="Cartons Placed" value={previewCartonsPlaced} />
                 <KPI label="Allocated CBM" value={previewAllocatedCbm.toFixed(6)} />
               </div>
 
               <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
-                <span className="font-extrabold text-slate-900">Orientation:</span>{" "}
-                {preview.metrics.orientation}
+                <span className="font-extrabold text-slate-900">Orientation:</span> {preview.metrics.orientation}
               </div>
+
+              {previewErr ? (
+                <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                  {previewErr}
+                </div>
+              ) : null}
             </>
           ) : (
             <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
-              {previewErr || "Fill carton qty + dimensions to see preview."}
+              {isTypingDimsOrQty ? "Finish typing carton qty + W/L/H to see accurate preview." : previewErr || "Fill carton qty + dimensions to see preview."}
             </div>
           )}
         </div>
@@ -477,7 +575,6 @@ export default function FGEntryForm() {
         <GraphicalPane warehouse={warehouse} selectedRowId={rowId} preview={preview} />
       </div>
 
-      {/* Tailwind helpers (keep inside file to stay “full code”) */}
       <style jsx global>{`
         .input {
           width: 100%;
@@ -514,146 +611,6 @@ function KPI({ label, value }) {
     <div className="rounded-xl border border-slate-200 bg-white p-3">
       <div className="text-[11px] font-bold text-slate-500">{label}</div>
       <div className="mt-1 text-base font-extrabold text-slate-900">{value}</div>
-    </div>
-  );
-}
-
-function OrientationDiagram({ orientation, across, cartonW, cartonL, rowWidth }) {
-  const svgW = 420;
-  const svgH = 220;
-  const margin = 18;
-
-  const isLengthWise = orientation === "LENGTH_WISE";
-  const a = Math.max(1, Math.min(3, Number(across) || 1));
-
-  // Across width depends on orientation
-  const cartonAcrossWidth = isLengthWise ? cartonW : cartonL; // cm along row width
-  const cartonDepth = isLengthWise ? cartonL : cartonW; // cm into row depth
-
-  const totalAcrossWidth = n(cartonAcrossWidth) * a;
-  const fits = totalAcrossWidth > 0 ? totalAcrossWidth <= n(rowWidth) : true;
-
-  const maxWidth = svgW - 2 * margin;
-  const scale = Math.min(maxWidth / Math.max(n(rowWidth), totalAcrossWidth || 1), 1.6);
-
-  const rowWidthPx = n(rowWidth) * scale;
-  const cartonWidthPx = n(cartonAcrossWidth) * scale;
-  const cartonDepthPx = Math.max(36, Math.min(n(cartonDepth) * scale, 82));
-
-  const startX = margin;
-  const rowY = svgH / 2 - cartonDepthPx / 2;
-
-  return (
-    <div className="grid gap-2">
-      <svg
-        width={svgW}
-        height={svgH}
-        className="w-full rounded-xl border border-slate-200 bg-white"
-      >
-        {/* Row area */}
-        <rect
-          x={startX}
-          y={rowY - 18}
-          width={rowWidthPx}
-          height={cartonDepthPx + 36}
-          fill="#f1f5f9"
-          stroke="#0f172a"
-          strokeWidth="1.5"
-          strokeDasharray="5 4"
-          rx="10"
-        />
-        <text
-          x={startX + rowWidthPx / 2}
-          y={rowY - 24}
-          textAnchor="middle"
-          fontSize="11"
-          fontWeight="800"
-          fill="#0f172a"
-        >
-          Row Width: {n(rowWidth)}cm
-        </text>
-
-        {/* Cartons */}
-        {Array.from({ length: a }).map((_, i) => {
-          const x = startX + i * cartonWidthPx;
-          return (
-            <g key={i}>
-              <rect
-                x={x}
-                y={rowY}
-                width={cartonWidthPx}
-                height={cartonDepthPx}
-                rx="10"
-                fill={fits ? "#10b981" : "#ef4444"}
-                fillOpacity="0.18"
-                stroke={fits ? "#047857" : "#b91c1c"}
-                strokeWidth="2"
-              />
-              <text
-                x={x + cartonWidthPx / 2}
-                y={rowY + cartonDepthPx / 2 - 6}
-                textAnchor="middle"
-                fontSize="10"
-                fontWeight="900"
-                fill={fits ? "#065f46" : "#7f1d1d"}
-              >
-                Carton {i + 1}
-              </text>
-              <text
-                x={x + cartonWidthPx / 2}
-                y={rowY + cartonDepthPx / 2 + 10}
-                textAnchor="middle"
-                fontSize="9"
-                fontWeight="700"
-                fill="#334155"
-              >
-                W:{n(cartonAcrossWidth).toFixed(0)} • D:{n(cartonDepth).toFixed(0)}
-              </text>
-            </g>
-          );
-        })}
-
-        {/* Total width */}
-        <line
-          x1={startX}
-          y1={rowY + cartonDepthPx + 18}
-          x2={startX + a * cartonWidthPx}
-          y2={rowY + cartonDepthPx + 18}
-          stroke={fits ? "#047857" : "#b91c1c"}
-          strokeWidth="2"
-        />
-        <text
-          x={startX + (a * cartonWidthPx) / 2}
-          y={rowY + cartonDepthPx + 34}
-          textAnchor="middle"
-          fontSize="10"
-          fontWeight="900"
-          fill={fits ? "#065f46" : "#7f1d1d"}
-        >
-          Total: {totalAcrossWidth.toFixed(0)}cm {fits ? "FITS" : "TOO WIDE"}
-        </text>
-
-        <text x={startX} y={svgH - 10} fontSize="10" fontWeight="700" fill="#64748b">
-          {isLengthWise ? "Length goes into depth →" : "Width goes into depth →"}
-        </text>
-      </svg>
-
-      <div className="text-xs text-slate-600">
-        <div className="font-bold text-slate-800">Top view explanation:</div>
-        <div>
-          • Depth uses <span className="font-bold text-slate-900">{isLengthWise ? "L" : "W"}</span>{" "}
-          ({isLengthWise ? n(cartonL) : n(cartonW)}cm)
-        </div>
-        <div>
-          • Across uses <span className="font-bold text-slate-900">{isLengthWise ? "W" : "L"}</span>{" "}
-          ({n(cartonAcrossWidth)}cm) × {a} = {totalAcrossWidth.toFixed(0)}cm
-        </div>
-        {!fits ? (
-          <div className="mt-1 font-extrabold text-rose-700">
-            Doesn’t fit — reduce “Across” or change orientation.
-          </div>
-        ) : null}
-      </div>
     </div>
   );
 }

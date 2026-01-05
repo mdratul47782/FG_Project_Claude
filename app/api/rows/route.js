@@ -11,7 +11,7 @@ async function seedRowsIfEmpty() {
   for (const wh of warehouses) {
     await Row.create([
   {
-    name: "A1",
+    name: "A-1",
     warehouse: wh,
     type: "continuous",
     widthCm: 120,
@@ -19,7 +19,7 @@ async function seedRowsIfEmpty() {
     maxHeightCm: 213,
   },
   {
-    name: "A2",
+    name: "A-2",
     warehouse: wh,
     type: "segmented",
     widthCm: 120,
@@ -31,10 +31,8 @@ async function seedRowsIfEmpty() {
       { atSegmentBoundaryIndex: 2, radiusCm: 32 },
     ],
   },
-
-  // ✅ NEW ROWS
   {
-    name: "A4",
+    name: "A-3",
     warehouse: wh,
     type: "continuous",
     widthCm: 120,
@@ -42,7 +40,15 @@ async function seedRowsIfEmpty() {
     maxHeightCm: 213,
   },
   {
-    name: "A5",
+    name: "A-4",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 2200,
+    maxHeightCm: 213,
+  },
+  {
+    name: "A-5",
     warehouse: wh,
     type: "segmented",
     widthCm: 120,
@@ -55,7 +61,7 @@ async function seedRowsIfEmpty() {
     ],
   },
   {
-    name: "A6",
+    name: "A-6",
     warehouse: wh,
     type: "continuous",
     widthCm: 120,
@@ -63,7 +69,7 @@ async function seedRowsIfEmpty() {
     maxHeightCm: 213,
   },
   {
-    name: "A7",
+    name: "A-7",
     warehouse: wh,
     type: "continuous",
     widthCm: 120,
@@ -71,7 +77,7 @@ async function seedRowsIfEmpty() {
     maxHeightCm: 213,
   },
   {
-    name: "A8",
+    name: "A-8",
     warehouse: wh,
     type: "segmented",
     widthCm: 120,
