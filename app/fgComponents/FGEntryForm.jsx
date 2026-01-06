@@ -1,6 +1,7 @@
 // app/fgComponents/FGEntryForm.jsx
 "use client";
 
+import { useAuth } from "@/app/hooks/useAuth";
 import { useEffect, useMemo, useRef, useState } from "react";
 import GraphicalPane from "./GraphicalPane";
 import {
@@ -37,8 +38,6 @@ const BUYERS = [
 ];
 
 const FLOORS = ["A-2", "B-2", "A-3", "B-3", "A-4", "B-4", "A-5", "B-5"];
-
-// adjust if you need
 const SIZES = ["XS", "S", "M", "L", "XL", "XXL", "3XL", "4XL"];
 
 const PACK_TYPES = [
@@ -53,7 +52,7 @@ function n(v) {
   return Number.isFinite(x) ? x : 0;
 }
 
-// Debounce any value to avoid preview on partial typing
+// ✅ Debounce value to avoid preview on partial typing
 function useDebouncedValue(value, delay = 650) {
   const [debounced, setDebounced] = useState(value);
 
@@ -65,12 +64,49 @@ function useDebouncedValue(value, delay = 650) {
   return debounced;
 }
 
-// Mock auth - replace with actual auth context
-const mockAuth = {
-  factory: "K-2",
-};
-
 export default function FGEntryForm() {
+  const { auth } = useAuth();
+  console.log("FGEntryForm Auth", auth);
+
+  // ✅ Normalize auth (supports: object | stringified object | array | {user: {...}})
+  // ✅ IMPORTANT: your auth has "id" not "_id" -> we map it.
+  const user = useMemo(() => {
+    if (!auth) return null;
+
+    let a = auth;
+
+    if (typeof a === "string") {
+      try {
+        a = JSON.parse(a);
+      } catch {
+        return null;
+      }
+    }
+
+    if (Array.isArray(a)) a = a[0];
+    if (a?.user) a = a.user;
+
+    if (!a) return null;
+
+    // ✅ map id -> _id for Mongoose compatibility
+    if (!a._id && a.id) a._id = a.id;
+
+    return a;
+  }, [auth]);
+
+  // ✅ what you want to store on entry (snapshot)
+  const createdByPayload = useMemo(() => {
+    const userId = user?._id || user?.id || undefined; // ✅ now works
+    return {
+      userId,
+      user_name: user?.user_name || "",
+      role: user?.role || "",
+      assigned_building: user?.assigned_building || "",
+      factory: user?.factory || "",
+    };
+  }, [user]);
+
+  // ✅ FLOOR must be selected manually
   const [floor, setFloor] = useState("");
   const [warehouse, setWarehouse] = useState("B1");
   const [buyer, setBuyer] = useState(BUYERS[0]);
@@ -85,13 +121,13 @@ export default function FGEntryForm() {
   const [item, setItem] = useState("");
   const [color, setColor] = useState("");
 
-  // ✅ NEW: Pack Type
+  // ✅ Pack Type
   const [packType, setPackType] = useState(PACK_TYPES[0].value);
 
-  // ✅ NEW: Size + Qty is PER CARTON (M=4, XL=6 => pcs/carton=10)
+  // ✅ Size + Qty is PER CARTON
   const [sizes, setSizes] = useState([{ size: "", qty: "" }]);
 
-  // Keep inputs as strings
+  // ✅ Keep inputs as strings (typing friendly)
   const [pcsPerCarton, setPcsPerCarton] = useState("");
   const [cartonQty, setCartonQty] = useState("");
   const [w, setW] = useState("");
@@ -103,7 +139,7 @@ export default function FGEntryForm() {
   const [manualOrientation, setManualOrientation] = useState("LENGTH_WISE");
   const [manualAcross, setManualAcross] = useState(2);
 
-  // Debounced values (preview uses ONLY these)
+  // ✅ Debounced values (preview uses ONLY these)
   const dCartonQty = useDebouncedValue(cartonQty, 650);
   const dW = useDebouncedValue(w, 650);
   const dL = useDebouncedValue(l, 650);
@@ -123,14 +159,11 @@ export default function FGEntryForm() {
     return pcsPerCartonFromSizes > 0 ? pcsPerCartonFromSizes : n(pcsPerCarton);
   }, [pcsPerCartonFromSizes, pcsPerCarton]);
 
-  // ✅ optional: auto-fill pcs/carton when sizes given
+  // ✅ auto-fill pcs/carton when sizes are given
   useEffect(() => {
-    if (pcsPerCartonFromSizes > 0) {
-      setPcsPerCarton(String(pcsPerCartonFromSizes));
-    }
+    if (pcsPerCartonFromSizes > 0) setPcsPerCarton(String(pcsPerCartonFromSizes));
   }, [pcsPerCartonFromSizes]);
 
-  // ✅ totals
   const totalQty = useMemo(() => pcsPerCartonFinal * n(cartonQty), [pcsPerCartonFinal, cartonQty]);
   const perCartonCbm = useMemo(() => (n(w) * n(l) * n(h)) / 1_000_000, [w, l, h]);
   const totalCbm = useMemo(() => perCartonCbm * n(cartonQty), [perCartonCbm, cartonQty]);
@@ -141,7 +174,7 @@ export default function FGEntryForm() {
   const [saving, setSaving] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
 
-  // Prevent race condition (old request overwriting new)
+  // ✅ Prevent race condition
   const previewReqIdRef = useRef(0);
   const previewCtrlRef = useRef(null);
 
@@ -176,7 +209,7 @@ export default function FGEntryForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [warehouse]);
 
-  // When typing dims/qty, clear preview so user never sees wrong intermediate allocation
+  // ✅ When typing dims/qty, clear preview
   useEffect(() => {
     if (isTypingDimsOrQty) {
       setPreview(null);
@@ -203,7 +236,7 @@ export default function FGEntryForm() {
     if (qty <= 0) return;
     if (ww <= 0 || ll <= 0 || hh <= 0) return;
 
-    // abort previous request
+    // ✅ abort previous request
     if (previewCtrlRef.current) previewCtrlRef.current.abort();
     const ctrl = new AbortController();
     previewCtrlRef.current = ctrl;
@@ -228,7 +261,7 @@ export default function FGEntryForm() {
 
       const data = await res.json();
 
-      // ignore stale responses
+      // ✅ ignore stale responses
       if (reqId !== previewReqIdRef.current) return;
 
       if (!data.ok) {
@@ -251,21 +284,18 @@ export default function FGEntryForm() {
     }
   }
 
-  // preview triggers ONLY after debounced dims/qty settle
   useEffect(() => {
     loadPreview();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rowId, buyer, dCartonQty, dW, dL, dH, manualOrientation, manualAcross]);
 
-  // ✅ sizes helpers
+  // ✅ size helpers
   function addSizeRow() {
     setSizes((prev) => [...prev, { size: "", qty: "" }]);
   }
-
   function removeSizeRow(idx) {
     setSizes((prev) => prev.filter((_, i) => i !== idx));
   }
-
   function updateSizeRow(idx, patch) {
     setSizes((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
   }
@@ -300,6 +330,10 @@ export default function FGEntryForm() {
   async function handleSave() {
     setSaving(true);
     try {
+      // ✅ Only require factory (your auth doesn't have _id, it has id)
+      if (!user) throw new Error("Auth not loaded. Please login again / refresh.");
+      if (!user?.factory) throw new Error("Factory missing in auth. Please login again / refresh.");
+
       if (!floor) throw new Error("Please select Floor first.");
       if (!preview?.rowId) throw new Error("No valid preview for this row.");
       if (preview?.capacity?.unplacedCartons > 0) {
@@ -307,18 +341,14 @@ export default function FGEntryForm() {
       }
 
       const cleanedSizes = (sizes || [])
-        .map((r) => ({ size: (r.size || "").trim(), qty: n(r.qty) })) // ✅ qty is pcs per carton for that size
+        .map((r) => ({ size: (r.size || "").trim(), qty: n(r.qty) }))
         .filter((r) => r.size && r.qty > 0);
 
-      if (cleanedSizes.length > 0 && pcsPerCartonFinal <= 0) {
-        throw new Error("Invalid size qty per carton.");
-      }
-
+      if (cleanedSizes.length > 0 && pcsPerCartonFinal <= 0) throw new Error("Invalid size qty per carton.");
       if (n(cartonQty) <= 0) throw new Error("Carton Qty must be > 0.");
       if (n(w) <= 0 || n(l) <= 0 || n(h) <= 0) throw new Error("Carton dimensions must be > 0.");
       if (n(fobPerPcs) <= 0) throw new Error("FOB per pcs must be > 0.");
 
-      // 1) Save Entry
       const entryRes = await fetch("/api/entries", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -333,23 +363,24 @@ export default function FGEntryForm() {
           color,
 
           packType,
-          sizes: cleanedSizes, // ✅ per carton breakdown
+          sizes: cleanedSizes,
 
           warehouse,
-          pcsPerCarton: pcsPerCartonFinal, // ✅ store final pcs/carton
+          pcsPerCarton: pcsPerCartonFinal,
           cartonQty: n(cartonQty),
           cartonDimCm: { w: n(w), l: n(l), h: n(h) },
           fobPerPcs: n(fobPerPcs),
 
           status: "DRAFT",
-          factory: mockAuth.factory,
+
+          // ✅ FIX: auth snapshot goes here
+          createdBy: createdByPayload,
         }),
       });
 
       const entryData = await entryRes.json();
       if (!entryData.ok) throw new Error(entryData.message || "Entry save failed");
 
-      // 2) Save Allocation
       const allocRes = await fetch("/api/allocations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -370,13 +401,18 @@ export default function FGEntryForm() {
 
       resetForm();
     } catch (e) {
-      alert("Error: " + e.message);
+      alert("Error: " + (e?.message || "Unknown error"));
     } finally {
       setSaving(false);
     }
   }
 
-  const canSave = !!floor && !!preview?.rowId && !saving && n(preview?.capacity?.unplacedCartons) === 0;
+  const canSave =
+    !!user?.factory &&
+    !!floor &&
+    !!preview?.rowId &&
+    !saving &&
+    n(preview?.capacity?.unplacedCartons) === 0;
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -391,7 +427,7 @@ export default function FGEntryForm() {
           <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
             <Building2 className="h-4 w-4 text-slate-700" />
             <div className="text-xs">
-              <div className="font-semibold text-slate-900">Factory: {mockAuth.factory}</div>
+              <div className="font-semibold text-slate-900">Factory: {user?.factory || "—"}</div>
               <div className="text-slate-500">Floor: {floor || "—"}</div>
             </div>
           </div>
@@ -469,7 +505,6 @@ export default function FGEntryForm() {
             <input className="input" value={color} onChange={(e) => setColor(e.target.value)} />
           </Field>
 
-          {/* ✅ Pack Type */}
           <Field icon={Package} label="Pack Type">
             <select className="input" value={packType} onChange={(e) => setPackType(e.target.value)}>
               {PACK_TYPES.map((p) => (
@@ -480,7 +515,7 @@ export default function FGEntryForm() {
             </select>
           </Field>
 
-          {/* ✅ Sizes per carton */}
+          {/* Sizes per carton */}
           <div className="sm:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-3">
             <div className="mb-2 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 text-xs font-extrabold text-slate-700">
@@ -502,7 +537,11 @@ export default function FGEntryForm() {
               {sizes.map((r, idx) => (
                 <div key={idx} className="grid grid-cols-12 gap-2">
                   <div className="col-span-7">
-                    <select className="input" value={r.size} onChange={(e) => updateSizeRow(idx, { size: e.target.value })}>
+                    <select
+                      className="input"
+                      value={r.size}
+                      onChange={(e) => updateSizeRow(idx, { size: e.target.value })}
+                    >
                       <option value="">Select size</option>
                       {SIZES.map((s) => (
                         <option key={s} value={s}>
@@ -540,7 +579,8 @@ export default function FGEntryForm() {
             </div>
 
             <div className="mt-2 text-[11px] text-slate-600">
-              Pcs / Carton from sizes: <span className="font-extrabold text-slate-900">{pcsPerCartonFromSizes}</span>
+              Pcs / Carton from sizes:{" "}
+              <span className="font-extrabold text-slate-900">{pcsPerCartonFromSizes}</span>
             </div>
           </div>
 
@@ -551,12 +591,18 @@ export default function FGEntryForm() {
               value={pcsPerCarton}
               onChange={(e) => setPcsPerCarton(e.target.value)}
               placeholder="e.g. 24"
-              disabled={pcsPerCartonFromSizes > 0} // ✅ locked when sizes exist
+              disabled={pcsPerCartonFromSizes > 0}
             />
           </Field>
 
           <Field icon={Package} label="Carton Qty">
-            <input className="input" inputMode="numeric" value={cartonQty} onChange={(e) => setCartonQty(e.target.value)} placeholder="e.g. 120" />
+            <input
+              className="input"
+              inputMode="numeric"
+              value={cartonQty}
+              onChange={(e) => setCartonQty(e.target.value)}
+              placeholder="e.g. 120"
+            />
           </Field>
 
           <Field icon={Ruler} label="Carton W (cm)">
@@ -572,7 +618,13 @@ export default function FGEntryForm() {
           </Field>
 
           <Field icon={Tag} label="FOB (per pcs)">
-            <input className="input" inputMode="decimal" value={fobPerPcs} onChange={(e) => setFobPerPcs(e.target.value)} placeholder="e.g. 1.25" />
+            <input
+              className="input"
+              inputMode="decimal"
+              value={fobPerPcs}
+              onChange={(e) => setFobPerPcs(e.target.value)}
+              placeholder="e.g. 1.25"
+            />
           </Field>
 
           <Field icon={Layers} label="Carton Orientation">
@@ -682,7 +734,9 @@ export default function FGEntryForm() {
                 <span className="font-extrabold text-slate-900">Orientation:</span> {preview.metrics.orientation}
               </div>
 
-              {previewErr ? <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{previewErr}</div> : null}
+              {previewErr ? (
+                <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{previewErr}</div>
+              ) : null}
             </>
           ) : (
             <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">

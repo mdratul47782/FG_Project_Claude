@@ -13,6 +13,33 @@ import {
   ArrowRight,
 } from "lucide-react";
 
+const PACK_TYPES = [
+  { value: "SOLID_COLOR_SOLID_SIZE", label: "Solid Color Solid Size" },
+  { value: "SOLID_COLOR_ASSORT_SIZE", label: "Solid Color Assort Size" },
+  { value: "ASSORT_COLOR_SOLID_SIZE", label: "Assort Color Solid Size" },
+  { value: "ASSORT_COLOR_ASSORT_SIZE", label: "Assort Color Assort Size" },
+];
+
+const PACK_TYPE_LABEL = PACK_TYPES.reduce((acc, p) => {
+  acc[p.value] = p.label;
+  return acc;
+}, {});
+
+function idStr(v) {
+  if (!v) return "";
+  if (typeof v === "string") return v;
+  if (typeof v === "number") return String(v);
+
+  // handles Mongo export style: { $oid: "..." }
+  if (typeof v === "object") {
+    if (v.$oid) return String(v.$oid);
+    if (v._id) return idStr(v._id);
+    if (typeof v.toString === "function") return v.toString();
+  }
+
+  return String(v);
+}
+
 function colorFromKey(key) {
   let hash = 0;
   const s = String(key || "Unknown");
@@ -47,6 +74,19 @@ function formatDate(dt) {
   }
 }
 
+function sizesText(sizes) {
+  const list = Array.isArray(sizes) ? sizes : [];
+  const cleaned = list
+    .map((x) => ({ size: String(x?.size || "").trim(), qty: n(x?.qty) }))
+    .filter((x) => x.size && x.qty > 0);
+
+  if (!cleaned.length) return "N/A";
+
+  const total = cleaned.reduce((sum, x) => sum + x.qty, 0);
+  const breakdown = cleaned.map((x) => `${x.size}=${x.qty}`).join(", ");
+  return `${breakdown} (total ${total})`;
+}
+
 /** Normalize orientation values coming from DB/API */
 function normalizeOrientation(v) {
   const s = String(v || "").trim().toUpperCase();
@@ -63,8 +103,7 @@ function orientationUI(v) {
     return {
       code: "LENGTH_WISE",
       label: "Length-wise",
-      explain:
-        "L goes into row depth, W stays across row width",
+      explain: "L goes into row depth, W stays across row width",
       mini: "L → depth",
     };
   }
@@ -72,37 +111,31 @@ function orientationUI(v) {
     return {
       code: "WIDTH_WISE",
       label: "Width-wise",
-      explain:
-        "W goes into row depth, L stays across row width",
+      explain: "W goes into row depth, L stays across row width",
       mini: "W → depth",
     };
   }
-  return {
-    code: o || "N/A",
-    label: o || "N/A",
-    explain: "",
-    mini: "",
-  };
+  return { code: o || "N/A", label: o || "N/A", explain: "", mini: "" };
 }
 
 function allocBlocksFromAllocations(allocations = [], entriesMap = new Map()) {
   const blocks = [];
 
   for (const a of allocations) {
-    const allocationId = String(a._id || "");
-    const entryId = String(a.entryId || "");
+    const allocationId = idStr(a?._id);
+    const entryId = idStr(a?.entryId);
     const entry = entriesMap.get(entryId) || {};
 
-    const buyer = String(a.buyer || entry.buyer || "Unknown");
-    const qty = n(a.qtyTotal);
-    const cbm = cartonCbm(a.cartonDimCm) * qty;
+    const buyer = String(a?.buyer || entry?.buyer || "Unknown");
+    const qty = n(a?.qtyTotal);
+    const cbm = cartonCbm(a?.cartonDimCm || entry?.cartonDimCm) * qty;
 
-    const metas = Array.isArray(a.segmentsMeta) ? a.segmentsMeta : [];
+    const metas = Array.isArray(a?.segmentsMeta) ? a.segmentsMeta : [];
 
     if (metas.length > 0) {
       for (const m of metas) {
-        const wasted = n(m.wastedTailCm);
-        const reserved = n(m.allocatedLenCm);
+        const wasted = n(m?.wastedTailCm);
+        const reserved = n(m?.allocatedLenCm);
         const usedLen = reserved > 0 ? Math.max(0, reserved - wasted) : 0;
 
         blocks.push({
@@ -114,9 +147,9 @@ function allocBlocksFromAllocations(allocations = [], entriesMap = new Map()) {
           buyer,
           qty,
           cbm,
-          segmentIndex: n(m.segmentIndex),
-          start: n(m.startFromRowStartCm),
-          end: n(m.endFromRowStartCm),
+          segmentIndex: n(m?.segmentIndex),
+          start: n(m?.startFromRowStartCm),
+          end: n(m?.endFromRowStartCm),
           len: reserved,
           usedLen,
           wastedTail: wasted,
@@ -133,9 +166,9 @@ function allocBlocksFromAllocations(allocations = [], entriesMap = new Map()) {
         qty,
         cbm,
         segmentIndex: 0,
-        start: n(a.rowStartAtCm),
-        end: n(a.rowEndAtCm),
-        len: Math.max(0, n(a.rowEndAtCm) - n(a.rowStartAtCm)),
+        start: n(a?.rowStartAtCm),
+        end: n(a?.rowEndAtCm),
+        len: Math.max(0, n(a?.rowEndAtCm) - n(a?.rowStartAtCm)),
         usedLen: 0,
         wastedTail: 0,
       });
@@ -147,13 +180,18 @@ function allocBlocksFromAllocations(allocations = [], entriesMap = new Map()) {
 }
 
 function rowHoverText({ row, allocations, buyerStats }) {
-  const totalCartons = allocations.reduce((sum, a) => sum + n(a.qtyTotal), 0);
-  const totalCbm = allocations.reduce((sum, a) => sum + cartonCbm(a.cartonDimCm) * n(a.qtyTotal), 0);
+  const totalCartons = allocations.reduce((sum, a) => sum + n(a?.qtyTotal), 0);
+  const totalCbm = allocations.reduce(
+    (sum, a) => sum + cartonCbm(a?.cartonDimCm) * n(a?.qtyTotal),
+    0
+  );
 
   const buyerRows = Array.from((buyerStats || new Map()).entries())
     .sort((a, b) => (b[1]?.cartons || 0) - (a[1]?.cartons || 0))
     .map(([buyer, info]) => {
-      return `${buyer}: ${n(info.cartons)} cartons, ${n(info.cbm).toFixed(3)} cbm, ${n(info.lengthCm).toFixed(1)} cm`;
+      return `${buyer}: ${n(info.cartons)} cartons, ${n(info.cbm).toFixed(
+        3
+      )} cbm, ${n(info.lengthCm).toFixed(1)} cm`;
     });
 
   return [
@@ -194,15 +232,14 @@ export default function GraphicalPane({ warehouse, selectedRowId, preview }) {
         const nextAllocs = ad.allocations || [];
         const nextEntries = ed.entries || [];
 
-        // Signature: changes when newest allocation/entry changes
         const sig = [
           warehouse,
           nextRows.length,
           nextAllocs.length,
-          nextAllocs[0]?._id || "",
+          idStr(nextAllocs[0]?._id),
           nextAllocs[0]?.updatedAt || nextAllocs[0]?.createdAt || "",
           nextEntries.length,
-          nextEntries[0]?._id || "",
+          idStr(nextEntries[0]?._id),
           nextEntries[0]?.updatedAt || nextEntries[0]?.createdAt || "",
         ].join("|");
 
@@ -224,12 +261,11 @@ export default function GraphicalPane({ warehouse, selectedRowId, preview }) {
     [warehouse]
   );
 
-  // ✅ Auto refresh: polling + refresh on focus
   useEffect(() => {
     const ctrl = new AbortController();
     load(ctrl.signal);
 
-    const intervalMs = 8000; // auto refresh every 8s
+    const intervalMs = 8000;
     const t = setInterval(() => {
       if (document.visibilityState === "visible") load(ctrl.signal);
     }, intervalMs);
@@ -246,14 +282,14 @@ export default function GraphicalPane({ warehouse, selectedRowId, preview }) {
 
   const entriesMap = useMemo(() => {
     const m = new Map();
-    for (const e of entries) m.set(String(e._id), e);
+    for (const e of entries) m.set(idStr(e?._id), e);
     return m;
   }, [entries]);
 
   const allocationsByRow = useMemo(() => {
     const m = new Map();
     for (const a of allocations) {
-      const k = String(a.rowId);
+      const k = idStr(a?.rowId);
       const arr = m.get(k) || [];
       arr.push(a);
       m.set(k, arr);
@@ -264,9 +300,9 @@ export default function GraphicalPane({ warehouse, selectedRowId, preview }) {
   const allocationsStatsByRow = useMemo(() => {
     const m = new Map();
     for (const a of allocations) {
-      const k = String(a.rowId);
-      const qty = n(a.qtyTotal);
-      const cbm = cartonCbm(a.cartonDimCm) * qty;
+      const k = idStr(a?.rowId);
+      const qty = n(a?.qtyTotal);
+      const cbm = cartonCbm(a?.cartonDimCm) * qty;
       const prev = m.get(k) || { cartons: 0, cbm: 0 };
       prev.cartons += qty;
       prev.cbm += cbm;
@@ -278,18 +314,19 @@ export default function GraphicalPane({ warehouse, selectedRowId, preview }) {
   const allocationsByBuyerByRow = useMemo(() => {
     const m = new Map();
     for (const a of allocations) {
-      const rowKey = String(a.rowId);
-      const buyerKey = String(a.buyer || "Unknown");
+      const rowKey = idStr(a?.rowId);
+      const buyerKey = String(a?.buyer || "Unknown");
       const rowMap = m.get(rowKey) || new Map();
 
-      const qty = n(a.qtyTotal);
-      const cbm = cartonCbm(a.cartonDimCm) * qty;
+      const qty = n(a?.qtyTotal);
+      const cbm = cartonCbm(a?.cartonDimCm) * qty;
       const lengthCm = allocationLengthCm(a);
 
       const prev = rowMap.get(buyerKey) || { cartons: 0, cbm: 0, lengthCm: 0 };
       prev.cartons += qty;
       prev.cbm += cbm;
       prev.lengthCm += lengthCm;
+
       rowMap.set(buyerKey, prev);
       m.set(rowKey, rowMap);
     }
@@ -330,14 +367,14 @@ export default function GraphicalPane({ warehouse, selectedRowId, preview }) {
 
       <div className="space-y-4">
         {rows.map((row) => {
-          const rowAllocs = allocationsByRow.get(String(row._id)) || [];
-          const isSelected = String(row._id) === String(selectedRowId);
-          const stats = allocationsStatsByRow.get(String(row._id)) || { cartons: 0, cbm: 0 };
-          const buyerStats = allocationsByBuyerByRow.get(String(row._id)) || new Map();
+          const rowAllocs = allocationsByRow.get(idStr(row?._id)) || [];
+          const isSelected = idStr(row?._id) === idStr(selectedRowId);
+          const stats = allocationsStatsByRow.get(idStr(row?._id)) || { cartons: 0, cbm: 0 };
+          const buyerStats = allocationsByBuyerByRow.get(idStr(row?._id)) || new Map();
 
           return (
             <RowCard
-              key={row._id}
+              key={idStr(row?._id) || row?.name}
               row={row}
               allocations={rowAllocs}
               stats={stats}
@@ -356,12 +393,11 @@ export default function GraphicalPane({ warehouse, selectedRowId, preview }) {
 function RowCard({ row, allocations, preview, selected, stats, buyerStats, entriesMap }) {
   const buyerRows = Array.from(buyerStats.entries()).sort((a, b) => b[1].lengthCm - a[1].lengthCm);
 
-  // ✅ Orientation summary (stored allocations)
   const orientationSummary = useMemo(() => {
     const sum = { LENGTH_WISE: 0, WIDTH_WISE: 0, OTHER: 0 };
     for (const a of allocations) {
-      const o = normalizeOrientation(a.orientation || a.manualOrientation);
-      const qty = n(a.qtyTotal);
+      const o = normalizeOrientation(a?.orientation || a?.manualOrientation);
+      const qty = n(a?.qtyTotal);
       if (o === "LENGTH_WISE") sum.LENGTH_WISE += qty;
       else if (o === "WIDTH_WISE") sum.WIDTH_WISE += qty;
       else sum.OTHER += qty;
@@ -384,6 +420,7 @@ function RowCard({ row, allocations, preview, selected, stats, buyerStats, entri
             <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider text-slate-700">
               {row.type === "continuous" ? "Continuous" : "Segmented"}
             </span>
+
             {row.type === "continuous" ? (
               <span className="text-sm text-slate-600">
                 <Ruler className="mr-1 inline h-4 w-4 text-slate-500" />
@@ -410,11 +447,9 @@ function RowCard({ row, allocations, preview, selected, stats, buyerStats, entri
           </div>
 
           <div className="mt-2 text-sm text-slate-600">
-            <span className="font-bold text-slate-800">Total Allocated:</span> {stats.cartons} cartons,{" "}
-            {stats.cbm.toFixed(3)} cbm
+            <span className="font-bold text-slate-800">Total Allocated:</span> {stats.cartons} cartons, {stats.cbm.toFixed(3)} cbm
           </div>
 
-          {/* ✅ User-friendly orientation info */}
           {(orientationSummary.LENGTH_WISE > 0 || orientationSummary.WIDTH_WISE > 0) && (
             <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
               {orientationSummary.LENGTH_WISE > 0 && (
@@ -447,8 +482,8 @@ function RowCard({ row, allocations, preview, selected, stats, buyerStats, entri
                   <div key={buyer} className="flex items-center gap-2">
                     <div className="h-3 w-3 rounded-full" style={{ backgroundColor: colorFromKey(buyer) }} />
                     <span>
-                      <span className="font-semibold text-slate-800">{buyer}</span>:{" "}
-                      {info.lengthCm.toFixed(1)} cm, {info.cartons} cartons, {info.cbm.toFixed(3)} cbm
+                      <span className="font-semibold text-slate-800">{buyer}</span>: {info.lengthCm.toFixed(1)} cm,{" "}
+                      {info.cartons} cartons, {info.cbm.toFixed(3)} cbm
                     </span>
                   </div>
                 ))}
@@ -475,7 +510,6 @@ function RowCard({ row, allocations, preview, selected, stats, buyerStats, entri
                 <span className="font-semibold">Remaining:</span> {preview.metrics.rowRemainingAfterCm} cm
               </div>
 
-              {/* ✅ Preview orientation user-friendly */}
               {preview.metrics.orientation ? (
                 <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700">
                   {(() => {
@@ -483,8 +517,7 @@ function RowCard({ row, allocations, preview, selected, stats, buyerStats, entri
                     return (
                       <>
                         <div className="font-extrabold text-slate-900">
-                          Orientation: {o.label}{" "}
-                          <span className="font-bold text-slate-500">({o.mini})</span>
+                          Orientation: {o.label} <span className="font-bold text-slate-500">({o.mini})</span>
                         </div>
                         {o.explain ? <div className="mt-0.5 text-slate-600">{o.explain}</div> : null}
                       </>
@@ -530,7 +563,6 @@ function RowBar({ row, allocations, preview, buyerStats, entriesMap, colorMode =
       ? [{ segmentIndex: 0, lengthCm: n(row.lengthCm) }]
       : (row.segments || []).map((s, i) => ({ segmentIndex: i, lengthCm: n(s.lengthCm) }));
 
-  // physical parts: seg + pillar + seg...
   const parts = [];
   for (let i = 0; i < segs.length; i++) {
     parts.push({ type: "segment", segmentIndex: segs[i].segmentIndex, lengthCm: segs[i].lengthCm });
@@ -638,15 +670,7 @@ function RowBar({ row, allocations, preview, buyerStats, entriesMap, colorMode =
           const tip = [`Segment ${i + 1}`, `Length: ${r.segLen} cm`, `Position: ${r.startCm} → ${r.endCm} cm`].join("\n");
           return (
             <g key={`seg-${r.segmentIndex}-${i}`}>
-              <rect
-                x={r.segX}
-                y={y}
-                width={r.segW}
-                height={h}
-                fill={colorFromKey(`seg-${i}`)}
-                opacity="0.08"
-                clipPath={`url(#${clipRowId})`}
-              >
+              <rect x={r.segX} y={y} width={r.segW} height={h} fill={colorFromKey(`seg-${i}`)} opacity="0.08" clipPath={`url(#${clipRowId})`}>
                 <title>{tip}</title>
               </rect>
               <rect x={r.segX} y={y} width={r.segW} height={h} fill="transparent" stroke="#cbd5e1" strokeWidth="1" />
@@ -668,28 +692,34 @@ function RowBar({ row, allocations, preview, buyerStats, entriesMap, colorMode =
 
             const entry = b.entry || {};
             const alloc = b.allocation || {};
+
             const dim = entry.cartonDimCm || alloc.cartonDimCm || {};
             const o = orientationUI(alloc.orientation || alloc.manualOrientation);
 
-            // ✅ USER FRIENDLY ORIENTATION TEXT
-            const orientationLine =
-              o.code === "N/A"
-                ? "Orientation: N/A"
-                : `Orientation: ${o.label} (${o.mini})`;
+            const packTypeLabel = PACK_TYPE_LABEL[entry.packType] || entry.packType || "N/A";
+            const sizesLine = sizesText(entry.sizes);
 
+            const createdBy = entry.createdBy || {};
+            const inputter = `${createdBy.user_name || "N/A"} (${createdBy.role || "N/A"})`;
+
+            const orientationLine =
+              o.code === "N/A" ? "Orientation: N/A" : `Orientation: ${o.label} (${o.mini})`;
             const orientationExplain = o.explain ? `Meaning: ${o.explain}` : "";
 
             const tip = [
               `Entry: ${entry.code || "N/A"}`,
               `Buyer: ${b.buyer}`,
               `Warehouse: ${entry.warehouse || alloc.warehouse || "N/A"}`,
-              `Floor: ${entry.floor || "N/A"} | Factory: ${entry.factory || "N/A"} | Building: ${entry.assigned_building || "N/A"}`,
+              `Floor: ${entry.floor || "N/A"} | Factory: ${createdBy.factory || "N/A"} | Assigned Building: ${createdBy.assigned_building || "N/A"}`,
+              `Inputter: ${inputter}`,
               `---`,
               `Season: ${entry.season || "N/A"} | PO: ${entry.poNumber || "N/A"}`,
               `Style: ${entry.style || "N/A"} | Model: ${entry.model || "N/A"}`,
-              `Item: ${entry.item || "N/A"} | Color: ${entry.color || "N/A"} | Size: ${entry.size || "N/A"}`,
+              `Item: ${entry.item || "N/A"} | Color: ${entry.color || "N/A"}`,
+              `Pack Type: ${packTypeLabel}`,
+              `Sizes/Carton: ${sizesLine}`,
               `---`,
-              `Cartons: ${b.qty} | Pcs/Carton: ${entry.pcsPerCarton || "N/A"} | Total Pcs: ${entry.totalQty || "N/A"}`,
+              `Cartons: ${b.qty} | Pcs/Carton: ${entry.pcsPerCarton ?? "N/A"} | Total Pcs: ${entry.totalQty ?? "N/A"}`,
               `Dims: ${n(dim.w)}×${n(dim.l)}×${n(dim.h)} cm`,
               `Total CBM: ${b.cbm.toFixed(3)}`,
               `---`,
@@ -700,7 +730,7 @@ function RowBar({ row, allocations, preview, buyerStats, entriesMap, colorMode =
               `Across: ${alloc.across || "N/A"} | Layers: ${alloc.layers || "N/A"}`,
               `Depth/Column: ${alloc.columnDepthCm || "N/A"} cm`,
               `---`,
-              `Created: ${formatDate(entry.createdAt)} | Status: ${entry.status || "N/A"}`,
+              `Created/Allocated : ${formatDate(entry.createdAt)} | Status: ${entry.status || "N/A"}`,
             ]
               .filter(Boolean)
               .join("\n");
@@ -766,7 +796,6 @@ function RowBar({ row, allocations, preview, buyerStats, entriesMap, colorMode =
         </text>
       </svg>
 
-      {/* legend */}
       <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-600">
         <span className="inline-flex items-center gap-1">
           <Package className="h-4 w-4 text-slate-500" />
