@@ -10,14 +10,19 @@ const DimSchema = new mongoose.Schema(
   { _id: false }
 );
 
+// ✅ Size+Qty is PER CARTON breakdown
+// Example: [{size:"M", qty:4}, {size:"XL", qty:6}] => pcsPerCarton=10
+const SizeQtySchema = new mongoose.Schema(
+  {
+    size: { type: String, required: true },
+    qty: { type: Number, required: true, min: 1 },
+  },
+  { _id: false }
+);
+
 const PackSchema = new mongoose.Schema(
   {
-    // ✅ user chooses how carton goes along row (depth)
-    // "L" => carton length goes along row depth, width used for across
-    // "W" => carton width goes along row depth, length used for across
     depthBy: { type: String, enum: ["L", "W"], default: "L" },
-
-    // ✅ user chooses 2 or 3 across
     acrossWanted: { type: Number, enum: [2, 3], default: 3 },
   },
   { _id: false }
@@ -62,17 +67,28 @@ const FGEntrySchema = new mongoose.Schema(
     model: String,
     item: String,
     color: String,
-    size: String,
+
+    // ✅ NEW
+    packType: {
+      type: String,
+      enum: ["SOLID_COLOR_SOLID_SIZE", "SOLID_COLOR_ASSORT_SIZE", "ASSORT_COLOR_SOLID_SIZE", "ASSORT_COLOR_ASSORT_SIZE"],
+      default: "SOLID_COLOR_SOLID_SIZE",
+      required: true,
+    },
+
+    // ✅ NEW (per carton)
+    sizes: { type: [SizeQtySchema], default: [] },
 
     warehouse: { type: String, enum: ["B1", "B2"], required: true },
 
+    // ✅ must store FINAL pcs/carton (sum(sizes.qty) if sizes provided)
     pcsPerCarton: { type: Number, required: true },
     cartonQty: { type: Number, required: true },
     cartonDimCm: { type: DimSchema, required: true },
 
-    // ✅ user placement choice saved on entry
     pack: { type: PackSchema, default: () => ({ depthBy: "L", acrossWanted: 3 }) },
 
+    // ✅ totals
     totalQty: { type: Number, required: true },
     fobPerPcs: { type: Number, required: true },
     totalFob: { type: Number, required: true },
@@ -81,10 +97,8 @@ const FGEntrySchema = new mongoose.Schema(
     totalCbm: { type: Number, required: true },
 
     status: { type: String, default: "DRAFT" }, // DRAFT | ALLOCATED
-
     allocationId: { type: mongoose.Schema.Types.ObjectId, ref: "Allocation" },
 
-    // ✅ auth snapshot
     createdBy: { type: CreatedBySchema, default: () => ({}) },
   },
   { timestamps: true }

@@ -19,6 +19,8 @@ import {
   RotateCcw,
   AlertCircle,
   CheckCircle2,
+  Plus,
+  Trash2,
 } from "lucide-react";
 
 const BUYERS = [
@@ -36,12 +38,22 @@ const BUYERS = [
 
 const FLOORS = ["A-2", "B-2", "A-3", "B-3", "A-4", "B-4", "A-5", "B-5"];
 
+// adjust if you need
+const SIZES = ["XS", "S", "M", "L", "XL", "XXL", "3XL", "4XL"];
+
+const PACK_TYPES = [
+  { value: "SOLID_COLOR_SOLID_SIZE", label: "Solid Color Solid Size" },
+  { value: "SOLID_COLOR_ASSORT_SIZE", label: "Solid Color Assort Size" },
+  { value: "ASSORT_COLOR_SOLID_SIZE", label: "Assort Color Solid Size" },
+  { value: "ASSORT_COLOR_ASSORT_SIZE", label: "Assort Color Assort Size" },
+];
+
 function n(v) {
   const x = Number(v);
   return Number.isFinite(x) ? x : 0;
 }
 
-// ✅ Debounce any value (string/number) to avoid preview on partial typing
+// Debounce any value to avoid preview on partial typing
 function useDebouncedValue(value, delay = 650) {
   const [debounced, setDebounced] = useState(value);
 
@@ -59,9 +71,7 @@ const mockAuth = {
 };
 
 export default function FGEntryForm() {
-  // ✅ FLOOR = manual dropdown
-  const [floor, setFloor] = useState(FLOORS[0]);
-
+  const [floor, setFloor] = useState("");
   const [warehouse, setWarehouse] = useState("B1");
   const [buyer, setBuyer] = useState(BUYERS[0]);
 
@@ -74,9 +84,14 @@ export default function FGEntryForm() {
   const [model, setModel] = useState("");
   const [item, setItem] = useState("");
   const [color, setColor] = useState("");
-  const [size, setSize] = useState("");
 
-  // ✅ Keep inputs as strings to allow typing (4 -> 40) without forcing preview early
+  // ✅ NEW: Pack Type
+  const [packType, setPackType] = useState(PACK_TYPES[0].value);
+
+  // ✅ NEW: Size + Qty is PER CARTON (M=4, XL=6 => pcs/carton=10)
+  const [sizes, setSizes] = useState([{ size: "", qty: "" }]);
+
+  // Keep inputs as strings
   const [pcsPerCarton, setPcsPerCarton] = useState("");
   const [cartonQty, setCartonQty] = useState("");
   const [w, setW] = useState("");
@@ -88,18 +103,35 @@ export default function FGEntryForm() {
   const [manualOrientation, setManualOrientation] = useState("LENGTH_WISE");
   const [manualAcross, setManualAcross] = useState(2);
 
-  // ✅ Debounced values (preview uses ONLY these, not raw typing)
+  // Debounced values (preview uses ONLY these)
   const dCartonQty = useDebouncedValue(cartonQty, 650);
   const dW = useDebouncedValue(w, 650);
   const dL = useDebouncedValue(l, 650);
   const dH = useDebouncedValue(h, 650);
 
-  // ✅ If user is typing, we hide preview so it never shows wrong suggestion for "4"
   const isTypingDimsOrQty = useMemo(() => {
     return cartonQty !== dCartonQty || w !== dW || l !== dL || h !== dH;
   }, [cartonQty, dCartonQty, w, dW, l, dL, h, dH]);
 
-  const totalQty = useMemo(() => n(pcsPerCarton) * n(cartonQty), [pcsPerCarton, cartonQty]);
+  // ✅ pcs/carton from size breakdown (per carton)
+  const pcsPerCartonFromSizes = useMemo(() => {
+    return (sizes || []).reduce((sum, r) => sum + n(r.qty), 0);
+  }, [sizes]);
+
+  // ✅ final pcs/carton used for totals
+  const pcsPerCartonFinal = useMemo(() => {
+    return pcsPerCartonFromSizes > 0 ? pcsPerCartonFromSizes : n(pcsPerCarton);
+  }, [pcsPerCartonFromSizes, pcsPerCarton]);
+
+  // ✅ optional: auto-fill pcs/carton when sizes given
+  useEffect(() => {
+    if (pcsPerCartonFromSizes > 0) {
+      setPcsPerCarton(String(pcsPerCartonFromSizes));
+    }
+  }, [pcsPerCartonFromSizes]);
+
+  // ✅ totals
+  const totalQty = useMemo(() => pcsPerCartonFinal * n(cartonQty), [pcsPerCartonFinal, cartonQty]);
   const perCartonCbm = useMemo(() => (n(w) * n(l) * n(h)) / 1_000_000, [w, l, h]);
   const totalCbm = useMemo(() => perCartonCbm * n(cartonQty), [perCartonCbm, cartonQty]);
   const totalFob = useMemo(() => totalQty * n(fobPerPcs), [totalQty, fobPerPcs]);
@@ -109,7 +141,7 @@ export default function FGEntryForm() {
   const [saving, setSaving] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
 
-  // ✅ Prevent race condition (old request overwriting new)
+  // Prevent race condition (old request overwriting new)
   const previewReqIdRef = useRef(0);
   const previewCtrlRef = useRef(null);
 
@@ -144,7 +176,7 @@ export default function FGEntryForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [warehouse]);
 
-  // ✅ When typing dims/qty, clear preview so user never sees wrong intermediate allocation
+  // When typing dims/qty, clear preview so user never sees wrong intermediate allocation
   useEffect(() => {
     if (isTypingDimsOrQty) {
       setPreview(null);
@@ -155,7 +187,6 @@ export default function FGEntryForm() {
   }, [isTypingDimsOrQty]);
 
   async function loadPreview() {
-    // if still typing, skip
     if (isTypingDimsOrQty) return;
 
     setPreview(null);
@@ -172,7 +203,7 @@ export default function FGEntryForm() {
     if (qty <= 0) return;
     if (ww <= 0 || ll <= 0 || hh <= 0) return;
 
-    // ✅ abort previous request
+    // abort previous request
     if (previewCtrlRef.current) previewCtrlRef.current.abort();
     const ctrl = new AbortController();
     previewCtrlRef.current = ctrl;
@@ -197,7 +228,7 @@ export default function FGEntryForm() {
 
       const data = await res.json();
 
-      // ✅ ignore stale responses
+      // ignore stale responses
       if (reqId !== previewReqIdRef.current) return;
 
       if (!data.ok) {
@@ -209,44 +240,58 @@ export default function FGEntryForm() {
       setPreview(data.preview);
 
       if (data.preview?.capacity?.unplacedCartons > 0) {
-        setPreviewErr(
-          `Not enough space. Max fits: ${data.preview.capacity.maxCartons} cartons. Reduce qty or choose another row.`
-        );
+        setPreviewErr(`Not enough space. Max fits: ${data.preview.capacity.maxCartons} cartons. Reduce qty or choose another row.`);
       } else {
         setPreviewErr("");
       }
     } catch (e) {
-      if (e?.name !== "AbortError") {
-        setPreviewErr("Preview failed");
-      }
+      if (e?.name !== "AbortError") setPreviewErr("Preview failed");
     } finally {
       if (reqId === previewReqIdRef.current) setPreviewLoading(false);
     }
   }
 
-  // ✅ preview triggers ONLY after debounced dims/qty settle
+  // preview triggers ONLY after debounced dims/qty settle
   useEffect(() => {
     loadPreview();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rowId, buyer, dCartonQty, dW, dL, dH, manualOrientation, manualAcross]);
 
+  // ✅ sizes helpers
+  function addSizeRow() {
+    setSizes((prev) => [...prev, { size: "", qty: "" }]);
+  }
+
+  function removeSizeRow(idx) {
+    setSizes((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  function updateSizeRow(idx, patch) {
+    setSizes((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+  }
+
   function resetForm() {
-    setFloor(FLOORS[0]);
+    setFloor("");
     setSeason("");
     setPoNumber("");
     setStyle("");
     setModel("");
     setItem("");
     setColor("");
-    setSize("");
+
+    setPackType(PACK_TYPES[0].value);
+    setSizes([{ size: "", qty: "" }]);
+
     setPcsPerCarton("");
     setCartonQty("");
     setW("");
     setL("");
     setH("");
     setFobPerPcs("");
+
     setManualOrientation("LENGTH_WISE");
     setManualAcross(2);
+
     setPreview(null);
     setPreviewErr("");
     setPreviewLoading(false);
@@ -255,10 +300,23 @@ export default function FGEntryForm() {
   async function handleSave() {
     setSaving(true);
     try {
+      if (!floor) throw new Error("Please select Floor first.");
       if (!preview?.rowId) throw new Error("No valid preview for this row.");
       if (preview?.capacity?.unplacedCartons > 0) {
         throw new Error(`Only ${preview.capacity.maxCartons} cartons fit in remaining space. Reduce qty.`);
       }
+
+      const cleanedSizes = (sizes || [])
+        .map((r) => ({ size: (r.size || "").trim(), qty: n(r.qty) })) // ✅ qty is pcs per carton for that size
+        .filter((r) => r.size && r.qty > 0);
+
+      if (cleanedSizes.length > 0 && pcsPerCartonFinal <= 0) {
+        throw new Error("Invalid size qty per carton.");
+      }
+
+      if (n(cartonQty) <= 0) throw new Error("Carton Qty must be > 0.");
+      if (n(w) <= 0 || n(l) <= 0 || n(h) <= 0) throw new Error("Carton dimensions must be > 0.");
+      if (n(fobPerPcs) <= 0) throw new Error("FOB per pcs must be > 0.");
 
       // 1) Save Entry
       const entryRes = await fetch("/api/entries", {
@@ -273,12 +331,16 @@ export default function FGEntryForm() {
           model,
           item,
           color,
-          size,
+
+          packType,
+          sizes: cleanedSizes, // ✅ per carton breakdown
+
           warehouse,
-          pcsPerCarton: n(pcsPerCarton),
+          pcsPerCarton: pcsPerCartonFinal, // ✅ store final pcs/carton
           cartonQty: n(cartonQty),
           cartonDimCm: { w: n(w), l: n(l), h: n(h) },
           fobPerPcs: n(fobPerPcs),
+
           status: "DRAFT",
           factory: mockAuth.factory,
         }),
@@ -314,7 +376,7 @@ export default function FGEntryForm() {
     }
   }
 
-  const canSave = !!preview?.rowId && !saving && n(preview?.capacity?.unplacedCartons) === 0;
+  const canSave = !!floor && !!preview?.rowId && !saving && n(preview?.capacity?.unplacedCartons) === 0;
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -330,7 +392,7 @@ export default function FGEntryForm() {
             <Building2 className="h-4 w-4 text-slate-700" />
             <div className="text-xs">
               <div className="font-semibold text-slate-900">Factory: {mockAuth.factory}</div>
-              <div className="text-slate-500">Floor: {floor}</div>
+              <div className="text-slate-500">Floor: {floor || "—"}</div>
             </div>
           </div>
         </div>
@@ -338,6 +400,9 @@ export default function FGEntryForm() {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field icon={Building2} label="Floor">
             <select className="input" value={floor} onChange={(e) => setFloor(e.target.value)}>
+              <option value="" disabled>
+                select Floor
+              </option>
               {FLOORS.map((f) => (
                 <option key={f} value={f}>
                   {f}
@@ -404,9 +469,80 @@ export default function FGEntryForm() {
             <input className="input" value={color} onChange={(e) => setColor(e.target.value)} />
           </Field>
 
-          <Field icon={Tag} label="Size">
-            <input className="input" value={size} onChange={(e) => setSize(e.target.value)} />
+          {/* ✅ Pack Type */}
+          <Field icon={Package} label="Pack Type">
+            <select className="input" value={packType} onChange={(e) => setPackType(e.target.value)}>
+              {PACK_TYPES.map((p) => (
+                <option key={p.value} value={p.value}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
           </Field>
+
+          {/* ✅ Sizes per carton */}
+          <div className="sm:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-xs font-extrabold text-slate-700">
+                <Tag className="h-4 w-4 text-slate-600" />
+                Size + Qty (per carton)
+              </div>
+
+              <button
+                type="button"
+                onClick={addSizeRow}
+                className="inline-flex items-center gap-1 rounded-xl bg-white px-3 py-1.5 text-xs font-extrabold text-slate-800 hover:bg-slate-100"
+              >
+                <Plus className="h-4 w-4" />
+                Add size
+              </button>
+            </div>
+
+            <div className="grid gap-2">
+              {sizes.map((r, idx) => (
+                <div key={idx} className="grid grid-cols-12 gap-2">
+                  <div className="col-span-7">
+                    <select className="input" value={r.size} onChange={(e) => updateSizeRow(idx, { size: e.target.value })}>
+                      <option value="">Select size</option>
+                      {SIZES.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="col-span-4">
+                    <input
+                      className="input"
+                      inputMode="numeric"
+                      value={r.qty}
+                      onChange={(e) => updateSizeRow(idx, { qty: e.target.value })}
+                      placeholder="Pcs"
+                    />
+                  </div>
+
+                  <div className="col-span-1 flex items-center justify-end">
+                    <button
+                      type="button"
+                      onClick={() => removeSizeRow(idx)}
+                      disabled={sizes.length === 1}
+                      className={`rounded-xl p-2 ${
+                        sizes.length === 1 ? "cursor-not-allowed text-slate-300" : "text-rose-600 hover:bg-rose-50"
+                      }`}
+                      title="Remove"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-2 text-[11px] text-slate-600">
+              Pcs / Carton from sizes: <span className="font-extrabold text-slate-900">{pcsPerCartonFromSizes}</span>
+            </div>
+          </div>
 
           <Field icon={Package} label="Pcs per Carton">
             <input
@@ -415,17 +551,12 @@ export default function FGEntryForm() {
               value={pcsPerCarton}
               onChange={(e) => setPcsPerCarton(e.target.value)}
               placeholder="e.g. 24"
+              disabled={pcsPerCartonFromSizes > 0} // ✅ locked when sizes exist
             />
           </Field>
 
           <Field icon={Package} label="Carton Qty">
-            <input
-              className="input"
-              inputMode="numeric"
-              value={cartonQty}
-              onChange={(e) => setCartonQty(e.target.value)}
-              placeholder="e.g. 120"
-            />
+            <input className="input" inputMode="numeric" value={cartonQty} onChange={(e) => setCartonQty(e.target.value)} placeholder="e.g. 120" />
           </Field>
 
           <Field icon={Ruler} label="Carton W (cm)">
@@ -441,13 +572,7 @@ export default function FGEntryForm() {
           </Field>
 
           <Field icon={Tag} label="FOB (per pcs)">
-            <input
-              className="input"
-              inputMode="decimal"
-              value={fobPerPcs}
-              onChange={(e) => setFobPerPcs(e.target.value)}
-              placeholder="e.g. 1.25"
-            />
+            <input className="input" inputMode="decimal" value={fobPerPcs} onChange={(e) => setFobPerPcs(e.target.value)} placeholder="e.g. 1.25" />
           </Field>
 
           <Field icon={Layers} label="Carton Orientation">
@@ -468,6 +593,7 @@ export default function FGEntryForm() {
 
         <div className="mt-4 grid grid-cols-2 gap-3">
           <KPI label="Total Qty" value={totalQty} />
+          <KPI label="Pcs / Carton (final)" value={pcsPerCartonFinal} />
           <KPI label="Per Carton CBM" value={perCartonCbm.toFixed(6)} />
           <KPI label="Total CBM" value={totalCbm.toFixed(6)} />
           <KPI label="Total FOB" value={totalFob.toFixed(2)} />
@@ -538,14 +664,11 @@ export default function FGEntryForm() {
                 <KPI label="Requested (Cartons)" value={requested || 0} />
                 <KPI label="Placed Now (Cartons)" value={previewCartonsPlaced} />
                 <KPI label="Unplaced (Cartons)" value={unplaced || 0} />
-
                 <KPI label="More Can Fit (if you want)" value={moreCanFit || 0} />
                 <KPI label="Columns Used" value={previewColumnsUsed} />
-
                 <KPI label="Row Start (cm)" value={preview.metrics.rowStartAtCm} />
                 <KPI label="Row End (cm)" value={preview.metrics.rowEndAtCm} />
                 <KPI label="Remaining Length (cm)" value={preview.metrics.rowRemainingAfterCm} />
-
                 <KPI label="Allocated Height (cm)" value={preview.metrics.allocatedHeightCm} />
                 <KPI label="Remaining Height (cm)" value={preview.metrics.remainingHeightCm} />
                 <KPI label="Across" value={preview.metrics.across} />
@@ -559,11 +682,7 @@ export default function FGEntryForm() {
                 <span className="font-extrabold text-slate-900">Orientation:</span> {preview.metrics.orientation}
               </div>
 
-              {previewErr ? (
-                <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                  {previewErr}
-                </div>
-              ) : null}
+              {previewErr ? <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{previewErr}</div> : null}
             </>
           ) : (
             <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
