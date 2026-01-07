@@ -1,4 +1,4 @@
-// app/fgComponents/GraphicalPane.jsx
+// ✅ CHANGE 2: app/fgComponents/GraphicalPane.jsx  (force refresh after PO save + highlight support + row select)
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -30,7 +30,6 @@ function idStr(v) {
   if (typeof v === "string") return v;
   if (typeof v === "number") return String(v);
 
-  // handles Mongo export style: { $oid: "..." }
   if (typeof v === "object") {
     if (v.$oid) return String(v.$oid);
     if (v._id) return idStr(v._id);
@@ -87,16 +86,14 @@ function sizesText(sizes) {
   return `${breakdown} (total ${total})`;
 }
 
-/** Normalize orientation values coming from DB/API */
 function normalizeOrientation(v) {
   const s = String(v || "").trim().toUpperCase();
   if (!s) return "";
   if (s.includes("LENGTH")) return "LENGTH_WISE";
   if (s.includes("WIDTH")) return "WIDTH_WISE";
-  return s; // fallback
+  return s;
 }
 
-/** Human friendly label + explanation */
 function orientationUI(v) {
   const o = normalizeOrientation(v);
   if (o === "LENGTH_WISE") {
@@ -204,14 +201,21 @@ function rowHoverText({ row, allocations, buyerStats }) {
     .join("\n");
 }
 
-export default function GraphicalPane({ warehouse, selectedRowId, preview }) {
+export default function GraphicalPane({
+  warehouse,
+  selectedRowId,
+  preview,
+  highlightEntryIds = [],
+  dimOthers = false,
+  onSelectRow,
+  refreshKey = 0, // ✅ NEW: force refresh after PO save
+}) {
   const [rows, setRows] = useState([]);
   const [allocations, setAllocations] = useState([]);
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
 
-  // ✅ Avoid re-render if nothing changed
   const lastSigRef = useRef("");
 
   const load = useCallback(
@@ -232,15 +236,34 @@ export default function GraphicalPane({ warehouse, selectedRowId, preview }) {
         const nextAllocs = ad.allocations || [];
         const nextEntries = ed.entries || [];
 
+        // ✅ includes refreshKey + more entry signals (so PO edits are detected)
+        const e0 = nextEntries[0] || {};
+        const e10 = nextEntries[10] || {};
+        const eLast = nextEntries[nextEntries.length - 1] || {};
+
         const sig = [
           warehouse,
+          "rk:" + String(refreshKey),
+
           nextRows.length,
+
           nextAllocs.length,
           idStr(nextAllocs[0]?._id),
           nextAllocs[0]?.updatedAt || nextAllocs[0]?.createdAt || "",
+
           nextEntries.length,
-          idStr(nextEntries[0]?._id),
-          nextEntries[0]?.updatedAt || nextEntries[0]?.createdAt || "",
+
+          idStr(e0?._id),
+          e0?.updatedAt || e0?.createdAt || "",
+          e0?.poNumber || "",
+
+          idStr(e10?._id),
+          e10?.updatedAt || e10?.createdAt || "",
+          e10?.poNumber || "",
+
+          idStr(eLast?._id),
+          eLast?.updatedAt || eLast?.createdAt || "",
+          eLast?.poNumber || "",
         ].join("|");
 
         if (sig !== lastSigRef.current) {
@@ -258,7 +281,7 @@ export default function GraphicalPane({ warehouse, selectedRowId, preview }) {
         setLoading(false);
       }
     },
-    [warehouse]
+    [warehouse, refreshKey]
   );
 
   useEffect(() => {
@@ -333,64 +356,86 @@ export default function GraphicalPane({ warehouse, selectedRowId, preview }) {
     return m;
   }, [allocations]);
 
+  const highlightSet = useMemo(() => {
+    const s = new Set();
+    for (const id of highlightEntryIds || []) s.add(idStr(id));
+    return s;
+  }, [highlightEntryIds]);
+
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Warehouse className="h-5 w-5 text-slate-700" />
-          <div>
-            <div className="text-lg font-extrabold text-slate-900">Graphical View</div>
-            <div className="text-xs text-slate-500">
-              Warehouse: <span className="font-bold text-slate-700">{warehouse}</span>
-              {lastUpdated ? (
-                <>
-                  {" "}
-                  • Updated: <span className="font-semibold">{lastUpdated.toLocaleTimeString()}</span>
-                </>
-              ) : null}{" "}
-              • Auto refresh every 8s
-            </div>
+  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm flex flex-col h-[calc(150vh-180px)]">
+    <div className="mb-4 flex flex-wrap items-center justify-between gap-3 shrink-0">
+      <div className="flex items-center gap-2">
+        <Warehouse className="h-5 w-5 text-slate-700" />
+        <div>
+          <div className="text-lg font-extrabold text-slate-900">Graphical View</div>
+          <div className="text-xs text-slate-500">
+            Warehouse: <span className="font-bold text-slate-700">{warehouse}</span>
+            {lastUpdated ? (
+              <>
+                {" "}
+                • Updated: <span className="font-semibold">{lastUpdated.toLocaleTimeString()}</span>
+              </>
+            ) : null}{" "}
+            • Auto refresh every 8s
           </div>
         </div>
-
-        <button
-          onClick={() => {
-            const ctrl = new AbortController();
-            load(ctrl.signal);
-          }}
-          className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-extrabold text-slate-700 hover:bg-slate-50"
-        >
-          <RefreshCcw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          Refresh
-        </button>
       </div>
 
-      <div className="space-y-4">
-        {rows.map((row) => {
-          const rowAllocs = allocationsByRow.get(idStr(row?._id)) || [];
-          const isSelected = idStr(row?._id) === idStr(selectedRowId);
-          const stats = allocationsStatsByRow.get(idStr(row?._id)) || { cartons: 0, cbm: 0 };
-          const buyerStats = allocationsByBuyerByRow.get(idStr(row?._id)) || new Map();
-
-          return (
-            <RowCard
-              key={idStr(row?._id) || row?.name}
-              row={row}
-              allocations={rowAllocs}
-              stats={stats}
-              buyerStats={buyerStats}
-              preview={isSelected ? preview : null}
-              selected={isSelected}
-              entriesMap={entriesMap}
-            />
-          );
-        })}
-      </div>
+      <button
+        onClick={() => {
+          const ctrl = new AbortController();
+          load(ctrl.signal);
+        }}
+        className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-extrabold text-slate-700 hover:bg-slate-50"
+      >
+        <RefreshCcw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+        Refresh
+      </button>
     </div>
-  );
+
+    {/* ✅ SCROLL AREA */}
+    <div className="flex-1 overflow-y-auto pr-2 space-y-4">
+      {rows.map((row) => {
+        const rowAllocs = allocationsByRow.get(idStr(row?._id)) || [];
+        const isSelected = idStr(row?._id) === idStr(selectedRowId);
+        const stats = allocationsStatsByRow.get(idStr(row?._id)) || { cartons: 0, cbm: 0 };
+        const buyerStats = allocationsByBuyerByRow.get(idStr(row?._id)) || new Map();
+
+        return (
+          <RowCard
+            key={idStr(row?._id) || row?.name}
+            row={row}
+            allocations={rowAllocs}
+            stats={stats}
+            buyerStats={buyerStats}
+            preview={isSelected ? preview : null}
+            selected={isSelected}
+            entriesMap={entriesMap}
+            onSelectRow={onSelectRow}
+            highlightSet={highlightSet}
+            dimOthers={dimOthers}
+          />
+        );
+      })}
+    </div>
+  </div>
+);
+
 }
 
-function RowCard({ row, allocations, preview, selected, stats, buyerStats, entriesMap }) {
+function RowCard({
+  row,
+  allocations,
+  preview,
+  selected,
+  stats,
+  buyerStats,
+  entriesMap,
+  onSelectRow,
+  highlightSet,
+  dimOthers,
+}) {
   const buyerRows = Array.from(buyerStats.entries()).sort((a, b) => b[1].lengthCm - a[1].lengthCm);
 
   const orientationSummary = useMemo(() => {
@@ -405,12 +450,25 @@ function RowCard({ row, allocations, preview, selected, stats, buyerStats, entri
     return sum;
   }, [allocations]);
 
+  const rowHasHit = useMemo(() => {
+    if (!highlightSet?.size) return false;
+    return allocations.some((a) => highlightSet.has(idStr(a?.entryId)));
+  }, [allocations, highlightSet]);
+
   return (
     <div
-      className={`rounded-2xl p-4 transition-all ${
+      role="button"
+      tabIndex={0}
+      onClick={() => onSelectRow?.(row)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") onSelectRow?.(row);
+      }}
+      className={`rounded-2xl p-4 transition-all outline-none ${
         selected
-          ? "border-2 border-slate-900 bg-slate-50 shadow-sm"
-          : "border border-slate-200 bg-white hover:shadow-sm"
+          ? "cursor-pointer border-2 border-slate-900 bg-slate-50 shadow-sm"
+          : rowHasHit && dimOthers
+          ? "cursor-pointer border-2 border-emerald-500 bg-white shadow-sm"
+          : "cursor-pointer border border-slate-200 bg-white hover:shadow-sm"
       }`}
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -447,7 +505,8 @@ function RowCard({ row, allocations, preview, selected, stats, buyerStats, entri
           </div>
 
           <div className="mt-2 text-sm text-slate-600">
-            <span className="font-bold text-slate-800">Total Allocated:</span> {stats.cartons} cartons, {stats.cbm.toFixed(3)} cbm
+            <span className="font-bold text-slate-800">Total Allocated:</span> {stats.cartons} cartons,{" "}
+            {stats.cbm.toFixed(3)} cbm
           </div>
 
           {(orientationSummary.LENGTH_WISE > 0 || orientationSummary.WIDTH_WISE > 0) && (
@@ -538,13 +597,24 @@ function RowCard({ row, allocations, preview, selected, stats, buyerStats, entri
           buyerStats={buyerStats}
           entriesMap={entriesMap}
           colorMode="allocation"
+          highlightSet={highlightSet}
+          dimOthers={dimOthers}
         />
       </div>
     </div>
   );
 }
 
-function RowBar({ row, allocations, preview, buyerStats, entriesMap, colorMode = "allocation" }) {
+function RowBar({
+  row,
+  allocations,
+  preview,
+  buyerStats,
+  entriesMap,
+  colorMode = "allocation",
+  highlightSet,
+  dimOthers = false,
+}) {
   const W = 520;
   const H = 110;
 
@@ -630,6 +700,8 @@ function RowBar({ row, allocations, preview, buyerStats, entriesMap, colorMode =
   const y = 18;
   const h = 58;
 
+  const hasHighlights = !!highlightSet?.size;
+
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-3">
       <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="w-full">
@@ -660,17 +732,23 @@ function RowBar({ row, allocations, preview, buyerStats, entriesMap, colorMode =
           </pattern>
         </defs>
 
-        {/* base */}
         <rect x="0" y={y} width={W} height={h} fill="url(#segmentGradient)" stroke="#0f172a" strokeWidth="2" rx="14">
           <title>{baseTip}</title>
         </rect>
 
-        {/* segment backgrounds */}
         {segmentRects.map((r, i) => {
           const tip = [`Segment ${i + 1}`, `Length: ${r.segLen} cm`, `Position: ${r.startCm} → ${r.endCm} cm`].join("\n");
           return (
             <g key={`seg-${r.segmentIndex}-${i}`}>
-              <rect x={r.segX} y={y} width={r.segW} height={h} fill={colorFromKey(`seg-${i}`)} opacity="0.08" clipPath={`url(#${clipRowId})`}>
+              <rect
+                x={r.segX}
+                y={y}
+                width={r.segW}
+                height={h}
+                fill={colorFromKey(`seg-${i}`)}
+                opacity="0.08"
+                clipPath={`url(#${clipRowId})`}
+              >
                 <title>{tip}</title>
               </rect>
               <rect x={r.segX} y={y} width={r.segW} height={h} fill="transparent" stroke="#cbd5e1" strokeWidth="1" />
@@ -681,12 +759,14 @@ function RowBar({ row, allocations, preview, buyerStats, entriesMap, colorMode =
           );
         })}
 
-        {/* allocations clipped to segments only */}
         <g clipPath={`url(#${clipSegId})`}>
           {blocks.map((b) => {
             const x = sx(b.start);
             const w = sx(b.len);
             if (w <= 0) return null;
+
+            const isHit = hasHighlights ? highlightSet.has(idStr(b.entryId)) : false;
+            const opacity = hasHighlights && dimOthers ? (isHit ? 0.75 : 0.08) : 0.5;
 
             const fillKey = colorMode === "buyer" ? b.buyer : b.allocationId;
 
@@ -702,15 +782,16 @@ function RowBar({ row, allocations, preview, buyerStats, entriesMap, colorMode =
             const createdBy = entry.createdBy || {};
             const inputter = `${createdBy.user_name || "N/A"} (${createdBy.role || "N/A"})`;
 
-            const orientationLine =
-              o.code === "N/A" ? "Orientation: N/A" : `Orientation: ${o.label} (${o.mini})`;
+            const orientationLine = o.code === "N/A" ? "Orientation: N/A" : `Orientation: ${o.label} (${o.mini})`;
             const orientationExplain = o.explain ? `Meaning: ${o.explain}` : "";
 
             const tip = [
               `Entry: ${entry.code || "N/A"}`,
               `Buyer: ${b.buyer}`,
               `Warehouse: ${entry.warehouse || alloc.warehouse || "N/A"}`,
-              `Floor: ${entry.floor || "N/A"} | Factory: ${createdBy.factory || "N/A"} | Assigned Building: ${createdBy.assigned_building || "N/A"}`,
+              `Floor: ${entry.floor || "N/A"} | Factory: ${createdBy.factory || "N/A"} | Assigned Building: ${
+                createdBy.assigned_building || "N/A"
+              }`,
               `Inputter: ${inputter}`,
               `---`,
               `Season: ${entry.season || "N/A"} | PO: ${entry.poNumber || "N/A"}`,
@@ -730,7 +811,7 @@ function RowBar({ row, allocations, preview, buyerStats, entriesMap, colorMode =
               `Across: ${alloc.across || "N/A"} | Layers: ${alloc.layers || "N/A"}`,
               `Depth/Column: ${alloc.columnDepthCm || "N/A"} cm`,
               `---`,
-              `Created/Allocated : ${formatDate(entry.createdAt)} | Status: ${entry.status || "N/A"}`,
+              `Updated: ${formatDate(entry.updatedAt)} | Created: ${formatDate(entry.createdAt)} | Status: ${entry.status || "N/A"}`,
             ]
               .filter(Boolean)
               .join("\n");
@@ -743,7 +824,9 @@ function RowBar({ row, allocations, preview, buyerStats, entriesMap, colorMode =
                 width={w}
                 height={h}
                 fill={colorFromKey(fillKey)}
-                opacity="0.50"
+                opacity={opacity}
+                stroke={isHit ? "#0f172a" : "none"}
+                strokeWidth={isHit ? 2 : 0}
                 className="hover:opacity-70 transition-opacity cursor-pointer"
               >
                 <title>{tip}</title>
@@ -752,7 +835,6 @@ function RowBar({ row, allocations, preview, buyerStats, entriesMap, colorMode =
           })}
         </g>
 
-        {/* preview overlay */}
         <g clipPath={`url(#${clipSegId})`}>
           {previewBlocks.map((p) => {
             const x = sx(p.start);
@@ -766,7 +848,6 @@ function RowBar({ row, allocations, preview, buyerStats, entriesMap, colorMode =
           })}
         </g>
 
-        {/* pillars */}
         {pillarRects.map((p) => {
           const tip = [`Pillar (blocked)`, `Diameter: ${p.gapCm} cm`, `Position: ${p.startCm} → ${p.endCm} cm`].join("\n");
 

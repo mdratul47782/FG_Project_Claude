@@ -1,7 +1,7 @@
-// app\api\allocations\_lib.js
+// app/api/allocations/[id]/route.js
 import { dbConnect } from "@/services/mongo";
-import Allocation from "@/model/Allocation";
-import FGEntry from "@/model/FGEntry";
+import Allocation from "@/models/Allocation";
+import FGEntry from "@/models/FGEntry";
 
 export async function GET(_req, { params }) {
   await dbConnect();

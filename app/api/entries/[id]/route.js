@@ -1,4 +1,6 @@
+// ✅ FIX (Next.js dynamic params warning) + ✅ PO update normalization
 // app/api/entries/[id]/route.js
+
 import { dbConnect } from "@/services/mongo";
 import FGEntry from "@/models/FGEntry";
 
@@ -29,20 +31,44 @@ function calcTotals({ pcsPerCarton, cartonQty, fobPerPcs, cartonDimCm, sizes }) 
   return { pcsPerCartonFinal, totalQty, perCartonCbm, totalCbm, totalFob };
 }
 
-export async function GET(_req, { params }) {
+// ✅ works whether params is an object OR a Promise (Next 15+)
+async function getIdFromCtx(ctx) {
+  const p = await Promise.resolve(ctx?.params);
+  return String(p?.id || "").trim();
+}
+
+export async function GET(_req, ctx) {
   await dbConnect();
-  const entry = await FGEntry.findById(params.id).lean();
+
+  const id = await getIdFromCtx(ctx);
+  if (!id) return Response.json({ ok: false, message: "id is required" }, { status: 400 });
+
+  const entry = await FGEntry.findById(id).lean();
   if (!entry) return Response.json({ ok: false, message: "Not found" }, { status: 404 });
+
   return Response.json({ ok: true, entry });
 }
 
-export async function PATCH(req, { params }) {
+export async function PATCH(req, ctx) {
   await dbConnect();
-  const body = await req.json();
 
-  const update = { ...body };
+  const id = await getIdFromCtx(ctx);
+  if (!id) return Response.json({ ok: false, message: "id is required" }, { status: 400 });
 
-  if (body.cartonDimCm) {
+  const body = await req.json().catch(() => ({}));
+
+  // ✅ start with only what you want to allow (safe)
+  const update = {};
+
+  // ✅ PO update (string normalize)
+  if (body.poNumber !== undefined) update.poNumber = String(body.poNumber || "").trim();
+
+  // allow these fields if you want patch to support them (keep your existing behavior)
+  if (body.pcsPerCarton !== undefined) update.pcsPerCarton = Number(body.pcsPerCarton);
+  if (body.cartonQty !== undefined) update.cartonQty = Number(body.cartonQty);
+  if (body.fobPerPcs !== undefined) update.fobPerPcs = Number(body.fobPerPcs);
+
+  if (body.cartonDimCm !== undefined) {
     update.cartonDimCm = {
       w: Number(body.cartonDimCm?.w),
       l: Number(body.cartonDimCm?.l),
@@ -51,9 +77,7 @@ export async function PATCH(req, { params }) {
   }
 
   const maybeSizes = sanitizeSizes(body.sizes);
-  if (maybeSizes !== null) {
-    update.sizes = maybeSizes;
-  }
+  if (maybeSizes !== null) update.sizes = maybeSizes;
 
   const shouldRecalc =
     body.pcsPerCarton != null ||
@@ -63,7 +87,7 @@ export async function PATCH(req, { params }) {
     maybeSizes !== null;
 
   if (shouldRecalc) {
-    const existing = await FGEntry.findById(params.id).lean();
+    const existing = await FGEntry.findById(id).lean();
     if (!existing) return Response.json({ ok: false, message: "Not found" }, { status: 404 });
 
     const merged = {
@@ -76,7 +100,6 @@ export async function PATCH(req, { params }) {
 
     const totals = calcTotals(merged);
 
-    // ✅ important: store recalculated final pcs/carton
     update.pcsPerCarton = totals.pcsPerCartonFinal;
     update.totalQty = totals.totalQty;
     update.perCartonCbm = totals.perCartonCbm;
@@ -84,13 +107,20 @@ export async function PATCH(req, { params }) {
     update.totalFob = totals.totalFob;
   }
 
-  const entry = await FGEntry.findByIdAndUpdate(params.id, update, { new: true }).lean();
+  const entry = await FGEntry.findByIdAndUpdate(id, { $set: update }, { new: true }).lean();
+  if (!entry) return Response.json({ ok: false, message: "Not found" }, { status: 404 });
+
   return Response.json({ ok: true, entry });
 }
 
-export async function DELETE(_req, { params }) {
+export async function DELETE(_req, ctx) {
   await dbConnect();
-  const deleted = await FGEntry.findByIdAndDelete(params.id).lean();
+
+  const id = await getIdFromCtx(ctx);
+  if (!id) return Response.json({ ok: false, message: "id is required" }, { status: 400 });
+
+  const deleted = await FGEntry.findByIdAndDelete(id).lean();
   if (!deleted) return Response.json({ ok: false, message: "Not found" }, { status: 404 });
-  return Response.json({ ok: true, deletedId: params.id });
+
+  return Response.json({ ok: true, deletedId: id });
 }
