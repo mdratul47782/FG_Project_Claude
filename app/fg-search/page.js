@@ -478,16 +478,18 @@ export default function FGSearchPage() {
             display: block !important;
           }
 
-          /* Each label gets its own page */
+          /* Each label gets its own page - responsive to paper size */
           .label-page {
             page-break-after: always;
             break-after: page;
-            min-height: 100vh;
+            height: 100vh;
+            width: 100vw;
             display: flex !important;
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            padding: 20mm;
+            padding: 5vh 5vw;
+            box-sizing: border-box;
           }
 
           /* Remove page break from last label */
@@ -497,8 +499,36 @@ export default function FGSearchPage() {
           }
 
           @page {
-            margin: 10mm;
+            margin: 0;
             size: auto;
+          }
+
+          /* Responsive text sizing for print */
+          .label-line {
+            font-size: clamp(14px, 2vw, 24px) !important;
+            margin: 1.5vh 0 !important;
+            line-height: 1.4 !important;
+          }
+          
+          .label-id {
+            font-size: clamp(12px, 1.8vw, 20px) !important;
+            margin: 2vh 0 !important;
+          }
+          
+          .label-code {
+            font-size: clamp(16px, 2.5vw, 32px) !important;
+            margin-top: 2vh !important;
+            letter-spacing: 0.1em !important;
+          }
+
+          .label-barcode-container {
+            margin: 2vh 0 !important;
+            max-width: 80vw !important;
+          }
+
+          .label-barcode-container svg {
+            max-width: 100% !important;
+            height: auto !important;
           }
         }
 
@@ -531,22 +561,10 @@ export default function FGSearchPage() {
           letter-spacing: 2px;
         }
 
-        /* Print-specific label sizing */
-        @media print {
-          .label-line {
-            font-size: 18px;
-            margin: 10px 0;
-          }
-          
-          .label-id {
-            font-size: 16px;
-            margin: 14px 0;
-          }
-          
-          .label-code {
-            font-size: 22px;
-            margin-top: 14px;
-          }
+        .label-barcode-container {
+          display: flex;
+          justify-content: center;
+          margin: 10px 0;
         }
       `}</style>
     </div>
@@ -573,13 +591,13 @@ function CartonLabel({ entry, cartonNo, total }) {
 
       <div className="label-id">Car Id : {cartonId}</div>
 
-      <div style={{ display: "flex", justifyContent: "center", margin: "10px 0" }}>
+      <div className="label-barcode-container">
         <Barcode 
           value={cartonId} 
           format="CODE128" 
           renderer="svg" 
-          height={80} 
-          width={2.5} 
+          height={100} 
+          width={3} 
           displayValue={false} 
           margin={0} 
         />
