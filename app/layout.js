@@ -3,7 +3,7 @@ import { dbConnect } from "@/services/mongo";
 import { Bebas_Neue, Poppins, Roboto } from "next/font/google";
 import "./globals.css";
 import AuthProvider from "./providers/AuthProvider";
-
+import SideNavbar from "./SideNavBarComponent/SideNavbar";
 
 const bebasNeue = Bebas_Neue({
   subsets: ["latin"],
@@ -42,9 +42,10 @@ export default async function RootLayout({ children }) {
         `}
       >
         <AuthProvider>
-
-          <div >{children}</div>
+<SideNavbar />
+          <div className="min-h-screen pl-14" >{children}</div>
         </AuthProvider>
+
       </body>
     </html>
   );

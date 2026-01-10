@@ -15,7 +15,7 @@ async function seedRowsIfEmpty() {
     warehouse: wh,
     type: "continuous",
     widthCm: 120,
-    lengthCm: 1981,
+    lengthCm: 2030,
     maxHeightCm: 213,
   },
   {
@@ -24,7 +24,7 @@ async function seedRowsIfEmpty() {
     type: "segmented",
     widthCm: 120,
     maxHeightCm: 213,
-    segments: [{ lengthCm: 353 }, { lengthCm: 548 }, { lengthCm: 548 }, { lengthCm: 323 }],
+    segments: [{ lengthCm: 0 }, { lengthCm: 546.1 }, { lengthCm: 546.1 }, { lengthCm: 327.66 }],
     pillars: [
       { atSegmentBoundaryIndex: 0, radiusCm: 32 },
       { atSegmentBoundaryIndex: 1, radiusCm: 32 },
@@ -36,7 +36,7 @@ async function seedRowsIfEmpty() {
     warehouse: wh,
     type: "continuous",
     widthCm: 120,
-    lengthCm: 2200,
+    lengthCm: 1074.42,
     maxHeightCm: 213,
   },
   {
@@ -44,52 +44,39 @@ async function seedRowsIfEmpty() {
     warehouse: wh,
     type: "continuous",
     widthCm: 120,
-    lengthCm: 2200,
+    lengthCm: 1074.42,
+    maxHeightCm: 213,
+  },
+{
+    name: "A-5",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 2184.4,
     maxHeightCm: 213,
   },
   {
-    name: "A-5",
+    name: "A-6",
     warehouse: wh,
     type: "segmented",
     widthCm: 120,
     maxHeightCm: 213,
-    segments: [{ lengthCm: 323 }, { lengthCm: 609 }, { lengthCm: 548 }, { lengthCm: 323 }],
+    segments: [{ lengthCm: 401.32 }, { lengthCm: 637.54 }, { lengthCm: 624.84 }, { lengthCm: 327.66 }],
     pillars: [
       { atSegmentBoundaryIndex: 0, radiusCm: 32 },
       { atSegmentBoundaryIndex: 1, radiusCm: 32 },
       { atSegmentBoundaryIndex: 2, radiusCm: 32 },
     ],
   },
-  {
-    name: "A-6",
-    warehouse: wh,
-    type: "continuous",
-    widthCm: 120,
-    lengthCm: 2200,
-    maxHeightCm: 213,
-  },
+  
   {
     name: "A-7",
     warehouse: wh,
     type: "continuous",
     widthCm: 120,
-    lengthCm: 2200,
+    lengthCm: 2174.24,
     maxHeightCm: 213,
-  },
-  {
-    name: "A-8",
-    warehouse: wh,
-    type: "segmented",
-    widthCm: 120,
-    maxHeightCm: 213,
-    segments: [{ lengthCm: 323 }, { lengthCm: 454 }, { lengthCm: 548 }, { lengthCm: 323 }],
-    pillars: [
-      { atSegmentBoundaryIndex: 0, radiusCm: 32 },
-      { atSegmentBoundaryIndex: 1, radiusCm: 32 },
-      { atSegmentBoundaryIndex: 2, radiusCm: 32 },
-    ],
-  },
-]);
+  }]);
 
   }
 }

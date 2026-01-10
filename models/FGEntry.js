@@ -2,29 +2,17 @@
 import mongoose from "mongoose";
 
 const DimSchema = new mongoose.Schema(
-  {
-    w: { type: Number, required: true }, // cm
-    l: { type: Number, required: true }, // cm
-    h: { type: Number, required: true }, // cm
-  },
+  { w: { type: Number, required: true }, l: { type: Number, required: true }, h: { type: Number, required: true } },
   { _id: false }
 );
 
-// ✅ Size+Qty is PER CARTON breakdown
-// Example: [{size:"M", qty:4}, {size:"XL", qty:6}] => pcsPerCarton=10
 const SizeQtySchema = new mongoose.Schema(
-  {
-    size: { type: String, required: true },
-    qty: { type: Number, required: true, min: 1 },
-  },
+  { size: { type: String, required: true }, qty: { type: Number, required: true, min: 1 } },
   { _id: false }
 );
 
 const PackSchema = new mongoose.Schema(
-  {
-    depthBy: { type: String, enum: ["L", "W"], default: "L" },
-    acrossWanted: { type: Number, enum: [2, 3], default: 3 },
-  },
+  { depthBy: { type: String, enum: ["L", "W"], default: "L" }, acrossWanted: { type: Number, enum: [2, 3], default: 3 } },
   { _id: false }
 );
 
@@ -68,7 +56,6 @@ const FGEntrySchema = new mongoose.Schema(
     item: String,
     color: String,
 
-    // ✅ NEW
     packType: {
       type: String,
       enum: ["SOLID_COLOR_SOLID_SIZE", "SOLID_COLOR_ASSORT_SIZE", "ASSORT_COLOR_SOLID_SIZE", "ASSORT_COLOR_ASSORT_SIZE"],
@@ -76,19 +63,16 @@ const FGEntrySchema = new mongoose.Schema(
       required: true,
     },
 
-    // ✅ NEW (per carton)
     sizes: { type: [SizeQtySchema], default: [] },
 
     warehouse: { type: String, enum: ["B1", "B2"], required: true },
 
-    // ✅ must store FINAL pcs/carton (sum(sizes.qty) if sizes provided)
     pcsPerCarton: { type: Number, required: true },
     cartonQty: { type: Number, required: true },
     cartonDimCm: { type: DimSchema, required: true },
 
     pack: { type: PackSchema, default: () => ({ depthBy: "L", acrossWanted: 3 }) },
 
-    // ✅ totals
     totalQty: { type: Number, required: true },
     fobPerPcs: { type: Number, required: true },
     totalFob: { type: Number, required: true },
@@ -100,6 +84,16 @@ const FGEntrySchema = new mongoose.Schema(
     allocationId: { type: mongoose.Schema.Types.ObjectId, ref: "Allocation" },
 
     createdBy: { type: CreatedBySchema, default: () => ({}) },
+
+    // ✅ shipped yes/no
+    shipped: { type: Boolean, default: false },
+    shippedAt: { type: Date, default: null },
+    shippedBy: { type: CreatedBySchema, default: () => ({}) },
+
+    // ✅ NEW: printed yes/no
+    printed: { type: Boolean, default: false },
+    printedAt: { type: Date, default: null },
+   
   },
   { timestamps: true }
 );

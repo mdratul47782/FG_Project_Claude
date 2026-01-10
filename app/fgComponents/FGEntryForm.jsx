@@ -38,7 +38,9 @@ const BUYERS = [
 ];
 
 const FLOORS = ["A-2", "B-2", "A-3", "B-3", "A-4", "B-4", "A-5", "B-5"];
-const SIZES = ["XS", "S", "M", "L", "XL", "XXL", "3XL", "4XL"];
+const SIZES = ["38", "40", "42", "44", "46", "48", "50", "52", "10/11", "10-11", "12/13", "12M", "14-15", "18M", "2/3Y", "2-3Y", "24M", "2XL", "3/4Y", "3-4Y", "3XL", "4/5Y", "4-5Y", "4XL", "54", "5-6", "6M", "7/8", "7-8", "8/9", "8-9", "ADULT", "EU40", "EU42", "EU44", "EU46", "EU48", "EU50", "L", "M", "ONE SIZE", "S", "XL", "XS"];
+
+
 
 const PACK_TYPES = [
   { value: "SOLID_COLOR_SOLID_SIZE", label: "Solid Color Solid Size" },

@@ -6,7 +6,7 @@ import FGEntry from "@/models/FGEntry";
 import Allocation from "@/models/Allocation";
 import Row from "@/models/Row";
 
-const SIZE_ORDER = ["XS", "S", "M", "L", "XL", "XXL", "3XL", "4XL"];
+const SIZE_ORDER = ["38", "40", "42", "44", "46", "48", "50", "52", "10/11", "10-11", "12/13", "12M", "14-15", "18M", "2/3Y", "2-3Y", "24M", "2XL", "3/4Y", "3-4Y", "3XL", "4/5Y", "4-5Y", "4XL", "54", "5-6", "6M", "7/8", "7-8", "8/9", "8-9", "ADULT", "EU40", "EU42", "EU44", "EU46", "EU48", "EU50", "L", "M", "ONE SIZE", "S", "XL", "XS"];
 
 function n(v) {
   const x = Number(v);
