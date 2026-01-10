@@ -505,25 +505,31 @@ export default function FGSearchPage() {
 
           /* Responsive text sizing for print */
           .label-line {
-            font-size: clamp(14px, 2vw, 24px) !important;
-            margin: 1.5vh 0 !important;
-            line-height: 1.4 !important;
+            font-size: clamp(10px, 1.5vw, 24px) !important;
+            margin: 1vh 0 !important;
+            line-height: 1.3 !important;
+            word-wrap: break-word !important;
+            overflow-wrap: break-word !important;
+            white-space: normal !important;
+            max-width: 90vw !important;
           }
           
           .label-id {
-            font-size: clamp(12px, 1.8vw, 20px) !important;
-            margin: 2vh 0 !important;
+            font-size: clamp(10px, 1.5vw, 20px) !important;
+            margin: 1.5vh 0 !important;
+            word-wrap: break-word !important;
           }
           
           .label-code {
-            font-size: clamp(16px, 2.5vw, 32px) !important;
-            margin-top: 2vh !important;
-            letter-spacing: 0.1em !important;
+            font-size: clamp(12px, 2vw, 32px) !important;
+            margin-top: 1.5vh !important;
+            letter-spacing: 0.05em !important;
+            word-wrap: break-word !important;
           }
 
           .label-barcode-container {
-            margin: 2vh 0 !important;
-            max-width: 80vw !important;
+            margin: 1.5vh 0 !important;
+            max-width: 85vw !important;
           }
 
           .label-barcode-container svg {
@@ -544,7 +550,8 @@ export default function FGSearchPage() {
           font-weight: 700;
           line-height: 1.6;
           margin: 8px 0;
-          white-space: nowrap;
+          word-wrap: break-word;
+          overflow-wrap: break-word;
         }
         
         .label-id {
