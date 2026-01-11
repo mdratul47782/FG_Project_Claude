@@ -5,9 +5,7 @@ import { dbConnect } from "@/services/mongo";
 async function seedRowsIfEmpty() {
   const count = await Row.countDocuments();
   if (count > 0) return;
-
   const warehouses = ["B1", "B2"];
-
   for (const wh of warehouses) {
     await Row.create([
   {
@@ -47,7 +45,7 @@ async function seedRowsIfEmpty() {
     lengthCm: 1074.42,
     maxHeightCm: 213,
   },
-{
+  {
     name: "A-5",
     warehouse: wh,
     type: "continuous",
@@ -68,7 +66,6 @@ async function seedRowsIfEmpty() {
       { atSegmentBoundaryIndex: 2, radiusCm: 32 },
     ],
   },
-  
   {
     name: "A-7",
     warehouse: wh,
@@ -76,22 +73,213 @@ async function seedRowsIfEmpty() {
     widthCm: 120,
     lengthCm: 2174.24,
     maxHeightCm: 213,
+  },
+  {
+    name: "A-8",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 1850,
+    maxHeightCm: 213,
+  },
+  {
+    name: "A-9",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 1950,
+    maxHeightCm: 213,
+  },
+  {
+    name: "A-10",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 2100,
+    maxHeightCm: 213,
+  },
+  {
+    name: "A-11",
+    warehouse: wh,
+    type: "segmented",
+    widthCm: 120,
+    maxHeightCm: 213,
+    segments: [{ lengthCm: 450 }, { lengthCm: 550 }, { lengthCm: 600 }, { lengthCm: 380 }],
+    pillars: [
+      { atSegmentBoundaryIndex: 0, radiusCm: 32 },
+      { atSegmentBoundaryIndex: 1, radiusCm: 32 },
+      { atSegmentBoundaryIndex: 2, radiusCm: 32 },
+    ],
+  },
+  {
+    name: "A-12",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 1780,
+    maxHeightCm: 213,
+  },
+  {
+    name: "A-13",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 1920,
+    maxHeightCm: 213,
+  },
+  {
+    name: "A-14",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 2050,
+    maxHeightCm: 213,
+  },
+  {
+    name: "A-15",
+    warehouse: wh,
+    type: "segmented",
+    widthCm: 120,
+    maxHeightCm: 213,
+    segments: [{ lengthCm: 420 }, { lengthCm: 580 }, { lengthCm: 620 }, { lengthCm: 360 }],
+    pillars: [
+      { atSegmentBoundaryIndex: 0, radiusCm: 32 },
+      { atSegmentBoundaryIndex: 1, radiusCm: 32 },
+      { atSegmentBoundaryIndex: 2, radiusCm: 32 },
+    ],
+  },
+  {
+    name: "A-16",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 1890,
+    maxHeightCm: 213,
+  },
+  {
+    name: "A-17",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 2020,
+    maxHeightCm: 213,
+  },
+  {
+    name: "A-18",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 2150,
+    maxHeightCm: 213,
+  },
+  {
+    name: "A-19",
+    warehouse: wh,
+    type: "segmented",
+    widthCm: 120,
+    maxHeightCm: 213,
+    segments: [{ lengthCm: 480 }, { lengthCm: 560 }, { lengthCm: 590 }, { lengthCm: 350 }],
+    pillars: [
+      { atSegmentBoundaryIndex: 0, radiusCm: 32 },
+      { atSegmentBoundaryIndex: 1, radiusCm: 32 },
+      { atSegmentBoundaryIndex: 2, radiusCm: 32 },
+    ],
+  },
+  {
+    name: "A-20",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 1960,
+    maxHeightCm: 213,
+  },
+  {
+    name: "A-21",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 2080,
+    maxHeightCm: 213,
+  },
+  {
+    name: "A-22",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 1840,
+    maxHeightCm: 213,
+  },
+  {
+    name: "A-23",
+    warehouse: wh,
+    type: "segmented",
+    widthCm: 120,
+    maxHeightCm: 213,
+    segments: [{ lengthCm: 460 }, { lengthCm: 570 }, { lengthCm: 610 }, { lengthCm: 340 }],
+    pillars: [
+      { atSegmentBoundaryIndex: 0, radiusCm: 32 },
+      { atSegmentBoundaryIndex: 1, radiusCm: 32 },
+      { atSegmentBoundaryIndex: 2, radiusCm: 32 },
+    ],
+  },
+  {
+    name: "A-24",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 2010,
+    maxHeightCm: 213,
+  },
+  {
+    name: "A-25",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 2120,
+    maxHeightCm: 213,
   }]);
-
   }
 }
 
 export async function GET(req) {
   await dbConnect();
   await seedRowsIfEmpty();
-
   const { searchParams } = new URL(req.url);
   const warehouse = searchParams.get("warehouse");
-
   const q = {};
   if (warehouse) q.warehouse = warehouse;
-
-  const rows = await Row.find(q).sort({ name: 1 }).lean();
+  
+  // Fetch rows without sorting (we'll sort in JS)
+  const rows = await Row.find(q).lean();
+  
+  // Natural sort by name (A-1, A-2, ... A-10, A-11, ... A-25)
+  rows.sort((a, b) => {
+    const aName = a.name || "";
+    const bName = b.name || "";
+    
+    // Extract the numeric part from names like "A-1", "A-10", etc.
+    const aMatch = aName.match(/(\D+)-?(\d+)/);
+    const bMatch = bName.match(/(\D+)-?(\d+)/);
+    
+    if (aMatch && bMatch) {
+      const aPrefix = aMatch[1];
+      const bPrefix = bMatch[1];
+      const aNum = parseInt(aMatch[2], 10);
+      const bNum = parseInt(bMatch[2], 10);
+      
+      // First compare prefixes (A, B, C, etc.)
+      if (aPrefix !== bPrefix) {
+        return aPrefix.localeCompare(bPrefix);
+      }
+      
+      // Then compare numbers numerically
+      return aNum - bNum;
+    }
+    
+    // Fallback to string comparison
+    return aName.localeCompare(bName);
+  });
+  
   return Response.json({ ok: true, rows });
 }
 
