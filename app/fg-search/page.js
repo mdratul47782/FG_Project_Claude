@@ -158,25 +158,20 @@ export default function FGSearchPage() {
 
     try {
       const total = Math.max(1, n(printEntry.cartonQty));
-      // ✅ FIX: Properly convert string inputs to numbers
       const start = clamp(Number(cartonFrom) || 1, 1, total);
       const end = clamp(Number(cartonTo) || total, start, total);
 
-      // ✅ Build array of carton numbers (e.g., 1 to 22)
       const cartons = Array.from({ length: end - start + 1 }, (_, i) => start + i);
       
       console.log(`Printing cartons ${start} to ${end} (${cartons.length} labels)`);
       setPrintCartons(cartons);
 
-      // ✅ Wait for DOM to update with all labels
       await new Promise(resolve => setTimeout(resolve, 100));
 
       window.print();
 
-      // Reset after print dialog closes
       setPrintCartons([]);
 
-      // Mark as printed
       const updated = await markPrinted(printEntry._id);
 
       setResults((prev) =>
@@ -457,7 +452,7 @@ export default function FGSearchPage() {
           box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.25);
         }
 
-        /* ✅ Print styles - each label on separate page */
+        /* ✅ PRINT STYLES - Perfect centering on any paper size */
         @media print {
           /* Hide everything except print area */
           body * {
@@ -469,7 +464,7 @@ export default function FGSearchPage() {
             visibility: visible !important;
           }
 
-          /* Position print area to fill page */
+          /* Position print area */
           #print-area {
             position: absolute !important;
             left: 0 !important;
@@ -478,7 +473,7 @@ export default function FGSearchPage() {
             display: block !important;
           }
 
-          /* Each label gets its own page - responsive to paper size */
+          /* Each label perfectly centered on its own page */
           .label-page {
             page-break-after: always;
             break-after: page;
@@ -486,10 +481,12 @@ export default function FGSearchPage() {
             width: 100vw;
             display: flex !important;
             flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            padding: 5vh 5vw;
-            box-sizing: border-box;
+            justify-content: center !important;
+            align-items: center !important;
+            text-align: center !important;
+            padding: 0 5vw !important;
+            margin: 0 !important;
+            box-sizing: border-box !important;
           }
 
           /* Remove page break from last label */
@@ -498,43 +495,66 @@ export default function FGSearchPage() {
             break-after: auto;
           }
 
+          /* Zero margins for perfect centering */
           @page {
             margin: 0;
             size: auto;
           }
 
-          /* Responsive text sizing for print */
-          .label-line {
-            font-size: clamp(10px, 1.5vw, 24px) !important;
-            margin: 1vh 0 !important;
-            line-height: 1.3 !important;
-            word-wrap: break-word !important;
-            overflow-wrap: break-word !important;
-            white-space: normal !important;
+          /* Label content container - centered */
+          .label-content {
+            width: 100% !important;
             max-width: 90vw !important;
+            margin: 0 auto !important;
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: center !important;
+            justify-content: center !important;
+          }
+
+          /* Responsive text sizing - matching original sizes */
+          .label-line {
+            font-size: clamp(14px, 1.5vw, 24px) !important;
+            font-weight: 700 !important;
+            line-height: 1.5 !important;
+            margin: 1vh 0 !important;
+            word-wrap: break-word !important;
+            text-align: center !important;
+            width: 100% !important;
           }
           
           .label-id {
-            font-size: clamp(10px, 1.5vw, 20px) !important;
+            font-size: clamp(12px, 1.3vw, 20px) !important;
+            font-weight: 800 !important;
             margin: 1.5vh 0 !important;
-            word-wrap: break-word !important;
+            text-align: center !important;
+            width: 100% !important;
           }
           
           .label-code {
-            font-size: clamp(12px, 2vw, 32px) !important;
+            font-size: clamp(16px, 2vw, 32px) !important;
+            font-weight: 900 !important;
             margin-top: 1.5vh !important;
-            letter-spacing: 0.05em !important;
-            word-wrap: break-word !important;
+            letter-spacing: 0.1em !important;
+            text-align: center !important;
+            width: 100% !important;
           }
 
+          /* Barcode container - perfectly centered */
           .label-barcode-container {
             margin: 1.5vh 0 !important;
-            max-width: 85vw !important;
+            width: 100% !important;
+            max-width: 80vw !important;
+            display: flex !important;
+            justify-content: center !important;
+            align-items: center !important;
           }
 
           .label-barcode-container svg {
             max-width: 100% !important;
             height: auto !important;
+            display: block !important;
+            margin: 0 auto !important;
           }
         }
 
@@ -543,6 +563,13 @@ export default function FGSearchPage() {
           text-align: center;
           padding: 20px;
           background: white;
+        }
+
+        .label-content {
+          width: 100%;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
         }
         
         .label-line {
@@ -571,7 +598,14 @@ export default function FGSearchPage() {
         .label-barcode-container {
           display: flex;
           justify-content: center;
+          align-items: center;
           margin: 10px 0;
+          width: 100%;
+        }
+
+        .label-barcode-container svg {
+          display: block;
+          margin: 0 auto;
         }
       `}</style>
     </div>
@@ -585,32 +619,35 @@ function CartonLabel({ entry, cartonNo, total }) {
   const style = entry?.style || "-";
   const color = String(entry?.color || "-").toUpperCase();
   const cartonId = makeCartonId(entry, cartonNo);
+  const pcsPerCarton = n(entry?.pcsPerCarton);
 
   return (
     <div className="label-page">
-      <div className="label-line">
-        Customer : {buyer} &nbsp;&nbsp;&nbsp; PO No : {po} &nbsp;&nbsp;&nbsp; Size : {size}
+      <div className="label-content">
+        <div className="label-line">
+          Customer : {buyer} &nbsp;&nbsp;&nbsp; PO No : {po} &nbsp;&nbsp;&nbsp; Size : {size}
+        </div>
+
+        <div className="label-line">
+          Style No : {style} &nbsp;&nbsp;&nbsp; Color : {color} &nbsp;&nbsp;&nbsp; Qty/Carton : {pcsPerCarton}
+        </div>
+
+        <div className="label-id">Car Id : {cartonId}</div>
+
+        <div className="label-barcode-container">
+          <Barcode 
+            value={cartonId} 
+            format="CODE128" 
+            renderer="svg" 
+            height={100} 
+            width={3} 
+            displayValue={false} 
+            margin={0} 
+          />
+        </div>
+
+        <div className="label-code">{cartonId}</div>
       </div>
-
-      <div className="label-line">
-        Style No : {style} &nbsp;&nbsp;&nbsp; Color : {color} &nbsp;&nbsp;&nbsp; Qty : {total}
-      </div>
-
-      <div className="label-id">Car Id : {cartonId}</div>
-
-      <div className="label-barcode-container">
-        <Barcode 
-          value={cartonId} 
-          format="CODE128" 
-          renderer="svg" 
-          height={100} 
-          width={3} 
-          displayValue={false} 
-          margin={0} 
-        />
-      </div>
-
-      <div className="label-code">{cartonId}</div>
     </div>
   );
 }
