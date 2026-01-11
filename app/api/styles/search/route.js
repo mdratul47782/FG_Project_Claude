@@ -1,12 +1,16 @@
-// ✅ NEW: app/api/styles/search/route.js
-// Search by: warehouse + style + (buyer optional) + (color optional)
-// Returns: all matching entries (with allocation/row info) + date×size "pieces" table
+// ✅ UPDATED: app/api/styles/search/route.js
+// Excludes shipped entries by default (shipped === true will NOT be returned)
+
 import { dbConnect } from "@/services/mongo";
 import FGEntry from "@/models/FGEntry";
 import Allocation from "@/models/Allocation";
 import Row from "@/models/Row";
 
-const SIZE_ORDER = ["38", "40", "42", "44", "46", "48", "50", "52", "10/11", "10-11", "12/13", "12M", "14-15", "18M", "2/3Y", "2-3Y", "24M", "2XL", "3/4Y", "3-4Y", "3XL", "4/5Y", "4-5Y", "4XL", "54", "5-6", "6M", "7/8", "7-8", "8/9", "8-9", "ADULT", "EU40", "EU42", "EU44", "EU46", "EU48", "EU50", "L", "M", "ONE SIZE", "S", "XL", "XS"];
+const SIZE_ORDER = [
+  "38","40","42","44","46","48","50","52","10/11","10-11","12/13","12M","14-15","18M","2/3Y","2-3Y","24M",
+  "2XL","3/4Y","3-4Y","3XL","4/5Y","4-5Y","4XL","54","5-6","6M","7/8","7-8","8/9","8-9","ADULT",
+  "EU40","EU42","EU44","EU46","EU48","EU50","L","M","ONE SIZE","S","XL","XS"
+];
 
 function n(v) {
   const x = Number(v);
@@ -27,8 +31,7 @@ function ddMMM(d) {
   return `${day}-${mon}`;
 }
 
-// ✅ Your schema: sizes.qty is PER CARTON
-// So "pieces by size" = (sizes.qty * cartonQty)
+// sizes.qty is PER CARTON -> pieces by size = (sizes.qty * cartonQty)
 function piecesBySize(entry) {
   const cartonQty = n(entry?.cartonQty);
   const sizes = Array.isArray(entry?.sizes) ? entry.sizes : [];
@@ -63,13 +66,16 @@ export async function GET(req) {
   if (!warehouse) return Response.json({ ok: false, message: "warehouse is required" }, { status: 400 });
   if (!style) return Response.json({ ok: false, message: "style is required" }, { status: 400 });
 
-  const q = { warehouse, style };
+  // ✅ IMPORTANT: exclude shipped entries
+  // - includes shipped:false OR missing shipped field
+  const q = { warehouse, style, shipped: { $ne: true } };
   if (buyer) q.buyer = buyer;
   if (color) q.color = color;
 
   const entries = await FGEntry.find(q).sort({ createdAt: 1 }).lean();
 
   const entryIds = entries.map((e) => e._id);
+
   const allocations = await Allocation.find({ entryId: { $in: entryIds } }).lean();
 
   const rowIds = allocations.map((a) => a.rowId);
@@ -78,7 +84,7 @@ export async function GET(req) {
   const rowMap = new Map(rows.map((r) => [String(r._id), r]));
   const allocByEntryId = new Map(allocations.map((a) => [String(a.entryId), a]));
 
-  // ✅ date x size table (pieces)
+  // date x size table (pieces)
   const byDate = new Map();
   const totalsBySize = {};
   let grandTotal = 0;
@@ -149,11 +155,11 @@ export async function GET(req) {
     ok: true,
     query: { warehouse, style, buyer: buyer || "ALL", color: color || "ALL" },
     sizes,
-    rows: tableRows, // table rows: [{date, bySize, total}]
+    rows: tableRows,
     totalsBySize,
     grandTotal,
     entries: uiEntries,
-    entryIds: uiEntries.map((x) => x._id), // for GraphicalPane highlight
+    entryIds: uiEntries.map((x) => x._id),
     counts: { totalEntries: uiEntries.length, allocatedCount },
   });
 }

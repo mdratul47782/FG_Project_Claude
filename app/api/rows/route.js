@@ -8,6 +8,7 @@ async function seedRowsIfEmpty() {
   const warehouses = ["B1", "B2"];
   for (const wh of warehouses) {
     await Row.create([
+  // A ROWS
   {
     name: "A-1",
     warehouse: wh,
@@ -161,7 +162,7 @@ async function seedRowsIfEmpty() {
     warehouse: wh,
     type: "continuous",
     widthCm: 120,
-    lengthCm:1811,
+    lengthCm: 1811,
     maxHeightCm: 213,
   },
   {
@@ -237,6 +238,243 @@ async function seedRowsIfEmpty() {
     widthCm: 120,
     lengthCm: 1811,
     maxHeightCm: 213,
+  },
+  // B ROWS
+  {
+    name: "B-1",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 1993.89,
+    maxHeightCm: 213,
+  },
+  {
+    name: "B-2",
+    warehouse: wh,
+    type: "segmented",
+    widthCm: 120,
+    maxHeightCm: 213,
+    segments: [{ lengthCm: 447.03 }, { lengthCm: 553.72 }, { lengthCm: 637.57 }, { lengthCm: 627.38 }],
+    pillars: [
+      { atSegmentBoundaryIndex: 0, radiusCm: 32 },
+      { atSegmentBoundaryIndex: 1, radiusCm: 32 },
+      { atSegmentBoundaryIndex: 2, radiusCm: 32 },
+    ],
+  },
+  {
+    name: "B-3",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 1993.89,
+    maxHeightCm: 213,
+  },
+  {
+    name: "B-4",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 1993.89,
+    maxHeightCm: 213,
+  },
+  {
+    name: "B-5",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 1993.89,
+    maxHeightCm: 213,
+  },
+  {
+    name: "B-6",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 1993.89,
+    maxHeightCm: 213,
+  },
+  {
+    name: "B-7",
+    warehouse: wh,
+    type: "segmented",
+    widthCm: 120,
+    maxHeightCm: 213,
+    segments: [{ lengthCm: 447.03 }, { lengthCm: 553.72 }, { lengthCm: 637.54 }, { lengthCm: 627.38 }],
+    pillars: [
+      { atSegmentBoundaryIndex: 0, radiusCm: 32 },
+      { atSegmentBoundaryIndex: 1, radiusCm: 32 },
+      { atSegmentBoundaryIndex: 2, radiusCm: 32 },
+    ],
+  },
+  {
+    name: "B-8",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 1993.89,
+    maxHeightCm: 213,
+  },
+  {
+    name: "B-9",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 1993.89,
+    maxHeightCm: 213,
+  },
+  {
+    name: "B-10",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 1993.89,
+    maxHeightCm: 213,
+  },
+  {
+    name: "B-11",
+    warehouse: wh,
+    type: "segmented",
+    widthCm: 120,
+    maxHeightCm: 213,
+    segments: [{ lengthCm: 447.03 }, { lengthCm: 553.72 }, { lengthCm: 637.54 }, { lengthCm: 627.38 }],
+    pillars: [
+      { atSegmentBoundaryIndex: 0, radiusCm: 32 },
+      { atSegmentBoundaryIndex: 1, radiusCm: 32 },
+      { atSegmentBoundaryIndex: 2, radiusCm: 32 },
+    ],
+  },
+  {
+    name: "B-12",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 1993.89,
+    maxHeightCm: 213,
+  },
+  {
+    name: "B-13",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 1993.89,
+    maxHeightCm: 213,
+  },
+  {
+    name: "B-14",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 1993.89,
+    maxHeightCm: 213,
+  },
+  {
+    name: "B-15",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 1993.89,
+    maxHeightCm: 213,
+  },
+  {
+    name: "B-16",
+    warehouse: wh,
+    type: "segmented",
+    widthCm: 120,
+    maxHeightCm: 213,
+    segments: [{ lengthCm: 447.03 }, { lengthCm: 553.72 }, { lengthCm: 637.54 }, { lengthCm: 627.38 }],
+    pillars: [
+      { atSegmentBoundaryIndex: 0, radiusCm: 32 },
+      { atSegmentBoundaryIndex: 1, radiusCm: 32 },
+      { atSegmentBoundaryIndex: 2, radiusCm: 32 },
+    ],
+  },
+  {
+    name: "B-17",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 2659.38,
+    maxHeightCm: 213,
+  },
+  {
+    name: "B-18",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 2659.38,
+    maxHeightCm: 213,
+  },
+  {
+    name: "B-19",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 2659.38,
+    maxHeightCm: 213,
+  },
+  {
+    name: "B-20",
+    warehouse: wh,
+    type: "segmented",
+    widthCm: 120,
+    maxHeightCm: 213,
+    segments: [{ lengthCm: 454.65 }, { lengthCm: 637.54 }, { lengthCm: 627.38 }],
+    pillars: [
+      { atSegmentBoundaryIndex: 0, radiusCm: 32 },
+      { atSegmentBoundaryIndex: 1, radiusCm: 32 },
+    ],
+  },
+  {
+    name: "B-21",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 1993.89,
+    maxHeightCm: 213,
+  },
+  {
+    name: "B-22",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 1993.89,
+    maxHeightCm: 213,
+  },
+  {
+    name: "B-23",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 1993.89,
+    maxHeightCm: 213,
+  },
+  {
+    name: "B-24",
+    warehouse: wh,
+    type: "segmented",
+    widthCm: 120,
+    maxHeightCm: 213,
+    segments: [{ lengthCm: 454.65 }, { lengthCm: 637.57 }, { lengthCm: 627.38 }],
+    pillars: [
+      { atSegmentBoundaryIndex: 0, radiusCm: 32 },
+      { atSegmentBoundaryIndex: 1, radiusCm: 32 },
+    ],
+  },
+  {
+    name: "B-25",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 1404.62,
+    maxHeightCm: 213,
+  },
+  {
+    name: "B-26",
+    warehouse: wh,
+    type: "continuous",
+    widthCm: 120,
+    lengthCm: 1404.62,
+    maxHeightCm: 213,
   }]);
   }
 }
@@ -252,7 +490,7 @@ export async function GET(req) {
   // Fetch rows without sorting (we'll sort in JS)
   const rows = await Row.find(q).lean();
   
-  // Natural sort by name (A-1, A-2, ... A-10, A-11, ... A-25)
+  // Natural sort by name (A-1, A-2, ... A-10, A-11, ... A-25, B-1, B-2, ... B-26)
   rows.sort((a, b) => {
     const aName = a.name || "";
     const bName = b.name || "";

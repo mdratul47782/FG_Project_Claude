@@ -1,8 +1,10 @@
-// ✅ CHANGE 2: app/fgComponents/GraphicalPane.jsx
-// (force refresh after PO save + highlight support + row select)
-// ✅ FIX: allocations (and the whole row axis) now render from RIGHT → LEFT
-
+// app/rows-two-side/page.js
 "use client";
+
+// ✅ Single scroll viewport (one scrollbar)
+// ✅ Full-size RowCard design (same vibe as your GraphicalPane)
+// ✅ Left side = B rows (allocations LEFT→RIGHT)
+// ✅ Right side = A rows (allocations RIGHT→LEFT)
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -32,14 +34,17 @@ function idStr(v) {
   if (!v) return "";
   if (typeof v === "string") return v;
   if (typeof v === "number") return String(v);
-
   if (typeof v === "object") {
     if (v.$oid) return String(v.$oid);
     if (v._id) return idStr(v._id);
     if (typeof v.toString === "function") return v.toString();
   }
-
   return String(v);
+}
+
+function n(v) {
+  const x = Number(v);
+  return Number.isFinite(x) ? x : 0;
 }
 
 function colorFromKey(key) {
@@ -48,11 +53,6 @@ function colorFromKey(key) {
   for (let i = 0; i < s.length; i++) hash = (hash * 31 + s.charCodeAt(i)) | 0;
   const hue = Math.abs(hash) % 360;
   return `hsl(${hue} 70% 55%)`;
-}
-
-function n(v) {
-  const x = Number(v);
-  return Number.isFinite(x) ? x : 0;
 }
 
 function cartonCbm(cartonDimCm) {
@@ -189,9 +189,9 @@ function rowHoverText({ row, allocations, buyerStats }) {
   const buyerRows = Array.from((buyerStats || new Map()).entries())
     .sort((a, b) => (b[1]?.cartons || 0) - (a[1]?.cartons || 0))
     .map(([buyer, info]) => {
-      return `${buyer}: ${n(info.cartons)} cartons, ${n(info.cbm).toFixed(
-        3
-      )} cbm, ${n(info.lengthCm).toFixed(1)} cm`;
+      return `${buyer}: ${n(info.cartons)} cartons, ${n(info.cbm).toFixed(3)} cbm, ${n(
+        info.lengthCm
+      ).toFixed(1)} cm`;
     });
 
   return [
@@ -204,26 +204,49 @@ function rowHoverText({ row, allocations, buyerStats }) {
     .join("\n");
 }
 
-export default function GraphicalPane({
-  warehouse,
-  selectedRowId,
-  preview,
-  highlightEntryIds = [],
-  dimOthers = false,
-  onSelectRow,
-  refreshKey = 0, // ✅ NEW: force refresh after PO save
-}) {
+function rowPrefix(name) {
+  const s = String(name || "").trim().toUpperCase();
+  if (s.startsWith("A-")) return "A";
+  if (s.startsWith("B-")) return "B";
+  return "OTHER";
+}
+
+function rowNumber(name) {
+  const s = String(name || "").trim();
+  const parts = s.split("-");
+  const num = Number(parts?.[1]);
+  return Number.isFinite(num) ? num : 0;
+}
+
+function EmptyCard({ title = "—" }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="text-sm font-extrabold text-slate-700">{title}</div>
+      <div className="mt-1 text-xs text-slate-500">No row for this index</div>
+      <div className="mt-4 h-[110px] rounded-2xl border border-dashed border-slate-300 bg-white" />
+    </div>
+  );
+}
+
+export default function RowsTwoSideSingleViewport() {
+  const [warehouse, setWarehouse] = useState("B1");
+
   const [rows, setRows] = useState([]);
   const [allocations, setAllocations] = useState([]);
   const [entries, setEntries] = useState([]);
+
   const [loading, setLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
+
+  const [selectedRowId, setSelectedRowId] = useState("");
 
   const lastSigRef = useRef("");
 
   const load = useCallback(
     async (signal) => {
+      if (!warehouse) return;
       setLoading(true);
+
       try {
         const headers = { "Cache-Control": "no-cache" };
 
@@ -239,34 +262,20 @@ export default function GraphicalPane({
         const nextAllocs = ad.allocations || [];
         const nextEntries = ed.entries || [];
 
-        // ✅ includes refreshKey + more entry signals (so PO edits are detected)
+        const r0 = nextRows[0] || {};
+        const a0 = nextAllocs[0] || {};
         const e0 = nextEntries[0] || {};
-        const e10 = nextEntries[10] || {};
-        const eLast = nextEntries[nextEntries.length - 1] || {};
 
         const sig = [
-          warehouse,
-          "rk:" + String(refreshKey),
-
-          nextRows.length,
-
-          nextAllocs.length,
-          idStr(nextAllocs[0]?._id),
-          nextAllocs[0]?.updatedAt || nextAllocs[0]?.createdAt || "",
-
-          nextEntries.length,
-
+          "wh:" + warehouse,
+          "rows:" + nextRows.length,
+          idStr(r0?._id),
+          "allocs:" + nextAllocs.length,
+          idStr(a0?._id),
+          a0?.updatedAt || a0?.createdAt || "",
+          "entries:" + nextEntries.length,
           idStr(e0?._id),
           e0?.updatedAt || e0?.createdAt || "",
-          e0?.poNumber || "",
-
-          idStr(e10?._id),
-          e10?.updatedAt || e10?.createdAt || "",
-          e10?.poNumber || "",
-
-          idStr(eLast?._id),
-          eLast?.updatedAt || eLast?.createdAt || "",
-          eLast?.poNumber || "",
         ].join("|");
 
         if (sig !== lastSigRef.current) {
@@ -284,17 +293,16 @@ export default function GraphicalPane({
         setLoading(false);
       }
     },
-    [warehouse, refreshKey]
+    [warehouse]
   );
 
   useEffect(() => {
     const ctrl = new AbortController();
     load(ctrl.signal);
 
-    const intervalMs = 8000;
     const t = setInterval(() => {
       if (document.visibilityState === "visible") load(ctrl.signal);
-    }, intervalMs);
+    }, 8000);
 
     const onFocus = () => load(ctrl.signal);
     window.addEventListener("focus", onFocus);
@@ -359,68 +367,133 @@ export default function GraphicalPane({
     return m;
   }, [allocations]);
 
-  const highlightSet = useMemo(() => {
-    const s = new Set();
-    for (const id of highlightEntryIds || []) s.add(idStr(id));
-    return s;
-  }, [highlightEntryIds]);
+  const { aRows, bRows } = useMemo(() => {
+    const list = Array.isArray(rows) ? rows : [];
+    const A = [];
+    const B = [];
+
+    for (const r of list) {
+      const p = rowPrefix(r?.name);
+      if (p === "A") A.push(r);
+      else if (p === "B") B.push(r);
+    }
+
+    const sortFn = (x, y) => rowNumber(x?.name) - rowNumber(y?.name);
+    A.sort(sortFn);
+    B.sort(sortFn);
+
+    return { aRows: A, bRows: B };
+  }, [rows]);
+
+  const pairs = useMemo(() => {
+    const max = Math.max(aRows.length, bRows.length);
+    return Array.from({ length: max }, (_, i) => ({
+      b: bRows[i] || null,
+      a: aRows[i] || null,
+    }));
+  }, [aRows, bRows]);
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm flex flex-col h-[calc(150vh-180px)]">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 shrink-0">
-        <div className="flex items-center gap-2">
-          <Warehouse className="h-5 w-5 text-slate-700" />
-          <div>
-            <div className="text-lg font-extrabold text-slate-900">Graphical View</div>
-            <div className="text-xs text-slate-500">
-              Warehouse: <span className="font-bold text-slate-700">{warehouse}</span>
-              {lastUpdated ? (
-                <>
-                  {" "}
-                  • Updated: <span className="font-semibold">{lastUpdated.toLocaleTimeString()}</span>
-                </>
-              ) : null}{" "}
-              • Auto refresh every 8s
+    <div className="min-h-screen bg-slate-50">
+      <div className="mx-auto max-w-screen-2xl px-3 py-3">
+        {/* HEADER */}
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Warehouse className="h-5 w-5 text-slate-700" />
+              <div>
+                <div className="text-lg font-extrabold text-slate-900">Rows Two-Side (Single Viewport)</div>
+                <div className="text-xs text-slate-500">
+                  Warehouse: <span className="font-bold text-slate-700">{warehouse}</span>
+                  {lastUpdated ? (
+                    <>
+                      {" "}
+                      • Updated: <span className="font-semibold">{lastUpdated.toLocaleTimeString()}</span>
+                    </>
+                  ) : null}{" "}
+                  • Auto refresh every 8s
+                </div>
+                <div className="mt-0.5 text-[11px] text-slate-500">
+                  <b>One</b> scrollbar • Left = <b>B</b> (LTR) • Right = <b>A</b> (RTL) • B:{bRows.length} • A:{aRows.length}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700"
+                value={warehouse}
+                onChange={(e) => setWarehouse(e.target.value)}
+              >
+                <option value="B1">B1</option>
+                <option value="B2">B2</option>
+              </select>
+
+              <button
+                onClick={() => {
+                  const ctrl = new AbortController();
+                  load(ctrl.signal);
+                }}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-extrabold text-slate-700 hover:bg-slate-50"
+              >
+                <RefreshCcw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+                Refresh
+              </button>
             </div>
           </div>
         </div>
 
-        <button
-          onClick={() => {
-            const ctrl = new AbortController();
-            load(ctrl.signal);
-          }}
-          className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-extrabold text-slate-700 hover:bg-slate-50"
-        >
-          <RefreshCcw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          Refresh
-        </button>
-      </div>
+        {/* ✅ SINGLE VIEWPORT SCROLLER (one scrollbar) */}
+        <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="h-[calc(100vh-190px)] overflow-y-auto pr-2 space-y-4">
+            {pairs.map(({ b, a }, idx) => {
+              const bId = idStr(b?._id);
+              const aId = idStr(a?._id);
 
-      {/* ✅ SCROLL AREA */}
-      <div className="flex-1 overflow-y-auto pr-2 space-y-4">
-        {rows.map((row) => {
-          const rowAllocs = allocationsByRow.get(idStr(row?._id)) || [];
-          const isSelected = idStr(row?._id) === idStr(selectedRowId);
-          const stats = allocationsStatsByRow.get(idStr(row?._id)) || { cartons: 0, cbm: 0 };
-          const buyerStats = allocationsByBuyerByRow.get(idStr(row?._id)) || new Map();
+              return (
+                <div key={`pair-${idx}`} className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                  {/* LEFT = B */}
+                  {b ? (
+                    <RowCard
+                      row={b}
+                      allocations={allocationsByRow.get(bId) || []}
+                      stats={allocationsStatsByRow.get(bId) || { cartons: 0, cbm: 0 }}
+                      buyerStats={allocationsByBuyerByRow.get(bId) || new Map()}
+                      entriesMap={entriesMap}
+                      selected={bId === idStr(selectedRowId)}
+                      onSelectRow={(r) => setSelectedRowId(idStr(r?._id))}
+                      axisDir="ltr" // ✅ B = left→right
+                    />
+                  ) : (
+                    <EmptyCard title="(No B row)" />
+                  )}
 
-          return (
-            <RowCard
-              key={idStr(row?._id) || row?.name}
-              row={row}
-              allocations={rowAllocs}
-              stats={stats}
-              buyerStats={buyerStats}
-              preview={isSelected ? preview : null}
-              selected={isSelected}
-              entriesMap={entriesMap}
-              onSelectRow={onSelectRow}
-              highlightSet={highlightSet}
-              dimOthers={dimOthers}
-            />
-          );
-        })}
+                  {/* RIGHT = A */}
+                  {a ? (
+                    <RowCard
+                      row={a}
+                      allocations={allocationsByRow.get(aId) || []}
+                      stats={allocationsStatsByRow.get(aId) || { cartons: 0, cbm: 0 }}
+                      buyerStats={allocationsByBuyerByRow.get(aId) || new Map()}
+                      entriesMap={entriesMap}
+                      selected={aId === idStr(selectedRowId)}
+                      onSelectRow={(r) => setSelectedRowId(idStr(r?._id))}
+                      axisDir="rtl" // ✅ A = right→left
+                    />
+                  ) : (
+                    <EmptyCard title="(No A row)" />
+                  )}
+                </div>
+              );
+            })}
+
+            {pairs.length === 0 ? (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-600">
+                No rows found for this warehouse.
+              </div>
+            ) : null}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -429,16 +502,14 @@ export default function GraphicalPane({
 function RowCard({
   row,
   allocations,
-  preview,
   selected,
   stats,
   buyerStats,
   entriesMap,
   onSelectRow,
-  highlightSet,
-  dimOthers,
+  axisDir = "rtl", // "rtl" or "ltr"
 }) {
-  const buyerRows = Array.from(buyerStats.entries()).sort((a, b) => b[1].lengthCm - a[1].lengthCm);
+  const buyerRows = Array.from(buyerStats.entries()).sort((a, b) => (b?.[1]?.lengthCm || 0) - (a?.[1]?.lengthCm || 0));
 
   const orientationSummary = useMemo(() => {
     const sum = { LENGTH_WISE: 0, WIDTH_WISE: 0, OTHER: 0 };
@@ -452,11 +523,6 @@ function RowCard({
     return sum;
   }, [allocations]);
 
-  const rowHasHit = useMemo(() => {
-    if (!highlightSet?.size) return false;
-    return allocations.some((a) => highlightSet.has(idStr(a?.entryId)));
-  }, [allocations, highlightSet]);
-
   return (
     <div
       role="button"
@@ -468,8 +534,6 @@ function RowCard({
       className={`rounded-2xl p-4 transition-all outline-none ${
         selected
           ? "cursor-pointer border-2 border-slate-900 bg-slate-50 shadow-sm"
-          : rowHasHit && dimOthers
-          ? "cursor-pointer border-2 border-emerald-500 bg-white shadow-sm"
           : "cursor-pointer border border-slate-200 bg-white hover:shadow-sm"
       }`}
     >
@@ -543,8 +607,8 @@ function RowCard({
                   <div key={buyer} className="flex items-center gap-2">
                     <div className="h-3 w-3 rounded-full" style={{ backgroundColor: colorFromKey(buyer) }} />
                     <span>
-                      <span className="font-semibold text-slate-800">{buyer}</span>: {info.lengthCm.toFixed(1)} cm,{" "}
-                      {info.cartons} cartons, {info.cbm.toFixed(3)} cbm
+                      <span className="font-semibold text-slate-800">{buyer}</span>: {n(info?.lengthCm).toFixed(1)} cm,{" "}
+                      {n(info?.cartons)} cartons, {n(info?.cbm).toFixed(3)} cbm
                     </span>
                   </div>
                 ))}
@@ -553,72 +617,37 @@ function RowCard({
           ) : null}
         </div>
 
-        {preview?.metrics ? (
-          <div className="min-w-[240px] rounded-2xl border border-slate-200 bg-white p-3">
-            <div className="mb-2 flex items-center gap-2 text-sm font-extrabold text-slate-900">
-              <Info className="h-4 w-4 text-slate-700" />
-              Preview
-            </div>
-
-            <div className="grid gap-1 text-sm text-slate-700">
-              <div>
-                <span className="font-semibold">Start:</span> {preview.metrics.rowStartAtCm} cm
-              </div>
-              <div>
-                <span className="font-semibold">End:</span> {preview.metrics.rowEndAtCm} cm
-              </div>
-              <div>
-                <span className="font-semibold">Remaining:</span> {preview.metrics.rowRemainingAfterCm} cm
-              </div>
-
-              {preview.metrics.orientation ? (
-                <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700">
-                  {(() => {
-                    const o = orientationUI(preview.metrics.orientation);
-                    return (
-                      <>
-                        <div className="font-extrabold text-slate-900">
-                          Orientation: {o.label} <span className="font-bold text-slate-500">({o.mini})</span>
-                        </div>
-                        {o.explain ? <div className="mt-0.5 text-slate-600">{o.explain}</div> : null}
-                      </>
-                    );
-                  })()}
-                </div>
-              ) : null}
-            </div>
+        {/* Tiny side hint */}
+        <div className="min-w-[220px] rounded-2xl border border-slate-200 bg-white p-3">
+          <div className="mb-1 flex items-center gap-2 text-sm font-extrabold text-slate-900">
+            <Info className="h-4 w-4 text-slate-700" />
+            Axis
           </div>
-        ) : null}
+          <div className="text-xs text-slate-600">
+            {axisDir === "rtl" ? (
+              <>
+                Allocations: <b>RIGHT → LEFT</b>
+              </>
+            ) : (
+              <>
+                Allocations: <b>LEFT → RIGHT</b>
+              </>
+            )}
+          </div>
+        </div>
       </div>
 
       <div className="mt-4">
-        <RowBar
-          row={row}
-          allocations={allocations}
-          preview={preview}
-          buyerStats={buyerStats}
-          entriesMap={entriesMap}
-          colorMode="allocation"
-          highlightSet={highlightSet}
-          dimOthers={dimOthers}
-        />
+        <RowBar row={row} allocations={allocations} buyerStats={buyerStats} entriesMap={entriesMap} axisDir={axisDir} />
       </div>
     </div>
   );
 }
 
-function RowBar({
-  row,
-  allocations,
-  preview,
-  buyerStats,
-  entriesMap,
-  colorMode = "allocation",
-  highlightSet,
-  dimOthers = false,
-}) {
+function RowBar({ row, allocations, buyerStats, entriesMap, axisDir = "rtl" }) {
   const W = 520;
   const H = 110;
+  const isRTL = axisDir === "rtl";
 
   function pillarDiameterAfterSegmentCm(segmentIndex) {
     if (row?.type !== "segmented") return 0;
@@ -650,13 +679,11 @@ function RowBar({
   const pxPerCm = W / safeTotalLen;
   const sx = (cm) => n(cm) * pxPerCm;
 
-  // ✅ RIGHT → LEFT axis:
-  // - row start (0 cm) is at the RIGHT edge
-  // - increasing cm goes left
-  const xFromStartLen = (startCm, lenCm) => W - sx(n(startCm) + n(lenCm));
+  // ✅ x position based on axis direction
+  const xFromStartLen = (startCm, lenCm) => (isRTL ? W - sx(n(startCm) + n(lenCm)) : sx(n(startCm)));
 
-  // ✅ build segments/pillars from RIGHT → LEFT so clip + gaps match allocations
-  let xCursor = W;
+  // ✅ build segments/pillars in the same direction as axis
+  let xCursor = isRTL ? W : 0;
   let cmCursor = 0;
 
   const segmentRects = [];
@@ -664,7 +691,7 @@ function RowBar({
 
   for (const p of parts) {
     const wPx = sx(p.lengthCm);
-    const xPx = xCursor - wPx;
+    const xPx = isRTL ? xCursor - wPx : xCursor;
 
     const startCm = cmCursor;
     const endCm = cmCursor + n(p.lengthCm);
@@ -689,29 +716,22 @@ function RowBar({
       });
     }
 
-    xCursor -= wPx;
+    if (isRTL) xCursor -= wPx;
+    else xCursor += wPx;
+
     cmCursor += n(p.lengthCm);
   }
 
   const baseTip = rowHoverText({ row, allocations, buyerStats });
 
-  const clipRowId = `clip-row-${String(row._id || row.name).replace(/\s+/g, "-")}`;
-  const clipSegId = `clip-segs-${String(row._id || row.name).replace(/\s+/g, "-")}`;
+  const safeId = String(idStr(row?._id) || row?.name || "row").replace(/[^\w-]/g, "-");
+  const clipRowId = `clip-row-${safeId}`;
+  const clipSegId = `clip-segs-${safeId}`;
 
   const blocks = allocBlocksFromAllocations(allocations, entriesMap);
 
-  const previewBlocks = Array.isArray(preview?.segmentsMeta)
-    ? preview.segmentsMeta.map((m, idx) => ({
-        key: `pv-${idx}-${m.segmentIndex}-${m.startFromRowStartCm}`,
-        start: n(m.startFromRowStartCm),
-        len: n(m.allocatedLenCm),
-      }))
-    : [];
-
   const y = 18;
   const h = 58;
-
-  const hasHighlights = !!highlightSet?.size;
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-3">
@@ -727,30 +747,45 @@ function RowBar({
             ))}
           </clipPath>
 
-          <linearGradient id="segmentGradient" x1="0" y1="0" x2="0" y2="1">
+          <linearGradient id={`segmentGradient-${safeId}`} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="#ffffff" />
             <stop offset="100%" stopColor="#f8fafc" />
           </linearGradient>
 
-          <radialGradient id="pillarGrad" cx="35%" cy="30%" r="70%">
+          <radialGradient id={`pillarGrad-${safeId}`} cx="35%" cy="30%" r="70%">
             <stop offset="0%" stopColor="#ffffff" stopOpacity="1" />
             <stop offset="55%" stopColor="#cbd5e1" stopOpacity="1" />
             <stop offset="100%" stopColor="#64748b" stopOpacity="1" />
           </radialGradient>
 
-          <pattern id="pillarHatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+          <pattern
+            id={`pillarHatch-${safeId}`}
+            width="8"
+            height="8"
+            patternUnits="userSpaceOnUse"
+            patternTransform="rotate(45)"
+          >
             <line x1="0" y1="0" x2="0" y2="8" stroke="#0f172a" strokeOpacity="0.18" strokeWidth="2" />
           </pattern>
         </defs>
 
-        <rect x="0" y={y} width={W} height={h} fill="url(#segmentGradient)" stroke="#0f172a" strokeWidth="2" rx="14">
+        <rect
+          x="0"
+          y={y}
+          width={W}
+          height={h}
+          fill={`url(#segmentGradient-${safeId})`}
+          stroke="#0f172a"
+          strokeWidth="2"
+          rx="14"
+        >
           <title>{baseTip}</title>
         </rect>
 
         {segmentRects.map((r, i) => {
           const tip = [`Segment ${i + 1}`, `Length: ${r.segLen} cm`, `Position: ${r.startCm} → ${r.endCm} cm`].join("\n");
           return (
-            <g key={`seg-${r.segmentIndex}-${i}`}>
+            <g key={`seg-${safeId}-${r.segmentIndex}-${i}`}>
               <rect
                 x={r.segX}
                 y={y}
@@ -775,13 +810,7 @@ function RowBar({
             const w = sx(b.len);
             if (w <= 0) return null;
 
-            // ✅ RIGHT → LEFT position
             const x = xFromStartLen(b.start, b.len);
-
-            const isHit = hasHighlights ? highlightSet.has(idStr(b.entryId)) : false;
-            const opacity = hasHighlights && dimOthers ? (isHit ? 0.75 : 0.08) : 0.5;
-
-            const fillKey = colorMode === "buyer" ? b.buyer : b.allocationId;
 
             const entry = b.entry || {};
             const alloc = b.allocation || {};
@@ -836,29 +865,11 @@ function RowBar({
                 y={y}
                 width={w}
                 height={h}
-                fill={colorFromKey(fillKey)}
-                opacity={opacity}
-                stroke={isHit ? "#0f172a" : "none"}
-                strokeWidth={isHit ? 2 : 0}
+                fill={colorFromKey(b.allocationId)}
+                opacity={0.5}
                 className="hover:opacity-70 transition-opacity cursor-pointer"
               >
                 <title>{tip}</title>
-              </rect>
-            );
-          })}
-        </g>
-
-        <g clipPath={`url(#${clipSegId})`}>
-          {previewBlocks.map((p) => {
-            const w = sx(p.len);
-            if (w <= 0) return null;
-
-            // ✅ RIGHT → LEFT preview position
-            const x = xFromStartLen(p.start, p.len);
-
-            return (
-              <rect key={p.key} x={x} y={y} width={w} height={h} fill="#ef4444" opacity="0.22">
-                <title>Preview (not saved)</title>
               </rect>
             );
           })}
@@ -872,13 +883,13 @@ function RowBar({
           const rPx = Math.max(10, Math.min(h / 2 - 4, p.w / 2 - 4));
 
           return (
-            <g key={`pillar-${p.boundaryIndex}`}>
+            <g key={`pillar-${safeId}-${p.boundaryIndex}`}>
               <rect x={p.x} y={y} width={p.w} height={h} fill="#ffffff" />
-              <rect x={p.x} y={y} width={p.w} height={h} fill="url(#pillarHatch)" opacity="0.45" />
+              <rect x={p.x} y={y} width={p.w} height={h} fill={`url(#pillarHatch-${safeId})`} opacity="0.45" />
               <rect x={p.x} y={y} width={p.w} height={h} fill="transparent" stroke="#64748b" strokeWidth="1.5" strokeDasharray="6 4">
                 <title>{tip}</title>
               </rect>
-              <circle cx={cx} cy={cy} r={rPx} fill="url(#pillarGrad)" stroke="#0f172a" strokeOpacity="0.45" strokeWidth="2">
+              <circle cx={cx} cy={cy} r={rPx} fill={`url(#pillarGrad-${safeId})`} stroke="#0f172a" strokeOpacity="0.45" strokeWidth="2">
                 <title>{tip}</title>
               </circle>
               <text x={cx} y={y + 14} textAnchor="middle" fontSize="10" fill="#0f172a" fontWeight="900">
@@ -889,7 +900,7 @@ function RowBar({
         })}
 
         <text x="10" y="102" fontSize="10" fill="#64748b" fontWeight="700">
-          Hover blocks for details • Red = preview • Pillar = blocked
+          Hover blocks for details • Pillar = blocked
         </text>
       </svg>
 
@@ -904,7 +915,7 @@ function RowBar({
         </span>
         <span className="inline-flex items-center gap-1">
           <Layers className="h-4 w-4 text-slate-500" />
-          Preview overlay
+          Axis: {isRTL ? "RIGHT→LEFT" : "LEFT→RIGHT"}
         </span>
       </div>
     </div>
