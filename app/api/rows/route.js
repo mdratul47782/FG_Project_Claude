@@ -79,7 +79,7 @@ async function seedRowsIfEmpty() {
     warehouse: wh,
     type: "continuous",
     widthCm: 120,
-    lengthCm: 1850,
+    lengthCm: 2174.24,
     maxHeightCm: 213,
   },
   {
@@ -87,7 +87,7 @@ async function seedRowsIfEmpty() {
     warehouse: wh,
     type: "continuous",
     widthCm: 120,
-    lengthCm: 1950,
+    lengthCm: 2174.24,
     maxHeightCm: 213,
   },
   {
@@ -95,7 +95,7 @@ async function seedRowsIfEmpty() {
     warehouse: wh,
     type: "continuous",
     widthCm: 120,
-    lengthCm: 2100,
+    lengthCm: 2174.24,
     maxHeightCm: 213,
   },
   {
@@ -104,7 +104,7 @@ async function seedRowsIfEmpty() {
     type: "segmented",
     widthCm: 120,
     maxHeightCm: 213,
-    segments: [{ lengthCm: 450 }, { lengthCm: 550 }, { lengthCm: 600 }, { lengthCm: 380 }],
+    segments: [{ lengthCm: 401.52 }, { lengthCm: 637.54 }, { lengthCm: 624.84 }, { lengthCm: 327.66 }],
     pillars: [
       { atSegmentBoundaryIndex: 0, radiusCm: 32 },
       { atSegmentBoundaryIndex: 1, radiusCm: 32 },
@@ -116,7 +116,7 @@ async function seedRowsIfEmpty() {
     warehouse: wh,
     type: "continuous",
     widthCm: 120,
-    lengthCm: 1780,
+    lengthCm: 2174.24,
     maxHeightCm: 213,
   },
   {
@@ -124,7 +124,7 @@ async function seedRowsIfEmpty() {
     warehouse: wh,
     type: "continuous",
     widthCm: 120,
-    lengthCm: 1920,
+    lengthCm: 2174.24,
     maxHeightCm: 213,
   },
   {
@@ -132,7 +132,7 @@ async function seedRowsIfEmpty() {
     warehouse: wh,
     type: "continuous",
     widthCm: 120,
-    lengthCm: 2050,
+    lengthCm: 2174.24,
     maxHeightCm: 213,
   },
   {
@@ -141,7 +141,7 @@ async function seedRowsIfEmpty() {
     type: "segmented",
     widthCm: 120,
     maxHeightCm: 213,
-    segments: [{ lengthCm: 420 }, { lengthCm: 580 }, { lengthCm: 620 }, { lengthCm: 360 }],
+    segments: [{ lengthCm: 0 }, { lengthCm: 637.54 }, { lengthCm: 624.84 }, { lengthCm: 327.66 }],
     pillars: [
       { atSegmentBoundaryIndex: 0, radiusCm: 32 },
       { atSegmentBoundaryIndex: 1, radiusCm: 32 },
@@ -153,7 +153,7 @@ async function seedRowsIfEmpty() {
     warehouse: wh,
     type: "continuous",
     widthCm: 120,
-    lengthCm: 1890,
+    lengthCm: 1811,
     maxHeightCm: 213,
   },
   {
@@ -161,7 +161,7 @@ async function seedRowsIfEmpty() {
     warehouse: wh,
     type: "continuous",
     widthCm: 120,
-    lengthCm: 2020,
+    lengthCm:1811,
     maxHeightCm: 213,
   },
   {
@@ -169,7 +169,7 @@ async function seedRowsIfEmpty() {
     warehouse: wh,
     type: "continuous",
     widthCm: 120,
-    lengthCm: 2150,
+    lengthCm: 1811,
     maxHeightCm: 213,
   },
   {
@@ -178,7 +178,7 @@ async function seedRowsIfEmpty() {
     type: "segmented",
     widthCm: 120,
     maxHeightCm: 213,
-    segments: [{ lengthCm: 480 }, { lengthCm: 560 }, { lengthCm: 590 }, { lengthCm: 350 }],
+    segments: [{ lengthCm: 0 }, { lengthCm: 337.54 }, { lengthCm: 624.84 }, { lengthCm: 327.66 }],
     pillars: [
       { atSegmentBoundaryIndex: 0, radiusCm: 32 },
       { atSegmentBoundaryIndex: 1, radiusCm: 32 },
@@ -190,7 +190,7 @@ async function seedRowsIfEmpty() {
     warehouse: wh,
     type: "continuous",
     widthCm: 120,
-    lengthCm: 1960,
+    lengthCm: 1811,
     maxHeightCm: 213,
   },
   {
@@ -198,7 +198,7 @@ async function seedRowsIfEmpty() {
     warehouse: wh,
     type: "continuous",
     widthCm: 120,
-    lengthCm: 2080,
+    lengthCm: 1811,
     maxHeightCm: 213,
   },
   {
@@ -206,7 +206,7 @@ async function seedRowsIfEmpty() {
     warehouse: wh,
     type: "continuous",
     widthCm: 120,
-    lengthCm: 1840,
+    lengthCm: 1811,
     maxHeightCm: 213,
   },
   {
@@ -215,7 +215,7 @@ async function seedRowsIfEmpty() {
     type: "segmented",
     widthCm: 120,
     maxHeightCm: 213,
-    segments: [{ lengthCm: 460 }, { lengthCm: 570 }, { lengthCm: 610 }, { lengthCm: 340 }],
+    segments: [{ lengthCm: 0 }, { lengthCm: 637.54 }, { lengthCm: 624.84 }, { lengthCm: 327.66 }],
     pillars: [
       { atSegmentBoundaryIndex: 0, radiusCm: 32 },
       { atSegmentBoundaryIndex: 1, radiusCm: 32 },
@@ -227,7 +227,7 @@ async function seedRowsIfEmpty() {
     warehouse: wh,
     type: "continuous",
     widthCm: 120,
-    lengthCm: 2010,
+    lengthCm: 1811,
     maxHeightCm: 213,
   },
   {
@@ -235,7 +235,7 @@ async function seedRowsIfEmpty() {
     warehouse: wh,
     type: "continuous",
     widthCm: 120,
-    lengthCm: 2120,
+    lengthCm: 1811,
     maxHeightCm: 213,
   }]);
   }
