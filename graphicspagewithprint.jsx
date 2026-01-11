@@ -1,0 +1,1326 @@
+// ✅ CHANGE 2+: app/fgComponents/GraphicalPane.jsx
+// Adds: click-a-block → opens “Token” modal → Print (with row allocation images + orientation + placement plan)
+
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  RefreshCcw,
+  Warehouse,
+  Info,
+  Layers,
+  Ruler,
+  Package,
+  BarChart3,
+  ArrowRight,
+  Printer,
+  X,
+} from "lucide-react";
+
+const PACK_TYPES = [
+  { value: "SOLID_COLOR_SOLID_SIZE", label: "Solid Color Solid Size" },
+  { value: "SOLID_COLOR_ASSORT_SIZE", label: "Solid Color Assort Size" },
+  { value: "ASSORT_COLOR_SOLID_SIZE", label: "Assort Color Solid Size" },
+  { value: "ASSORT_COLOR_ASSORT_SIZE", label: "Assort Color Assort Size" },
+];
+
+const PACK_TYPE_LABEL = PACK_TYPES.reduce((acc, p) => {
+  acc[p.value] = p.label;
+  return acc;
+}, {});
+
+function idStr(v) {
+  if (!v) return "";
+  if (typeof v === "string") return v;
+  if (typeof v === "number") return String(v);
+
+  if (typeof v === "object") {
+    if (v.$oid) return String(v.$oid);
+    if (v._id) return idStr(v._id);
+    if (typeof v.toString === "function") return v.toString();
+  }
+
+  return String(v);
+}
+
+function colorFromKey(key) {
+  let hash = 0;
+  const s = String(key || "Unknown");
+  for (let i = 0; i < s.length; i++) hash = (hash * 31 + s.charCodeAt(i)) | 0;
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue} 70% 55%)`;
+}
+
+function n(v) {
+  const x = Number(v);
+  return Number.isFinite(x) ? x : 0;
+}
+
+function cartonCbm(cartonDimCm) {
+  const w = n(cartonDimCm?.w);
+  const l = n(cartonDimCm?.l);
+  const h = n(cartonDimCm?.h);
+  return (w * l * h) / 1_000_000;
+}
+
+function allocationLengthCm(allocation) {
+  if (!allocation?.columnsBySegment) return 0;
+  return allocation.columnsBySegment.reduce((sum, s) => sum + n(s.lengthUsedCm), 0);
+}
+
+function formatDate(dt) {
+  if (!dt) return "N/A";
+  try {
+    return new Date(dt).toLocaleString();
+  } catch {
+    return String(dt);
+  }
+}
+
+function sizesText(sizes) {
+  const list = Array.isArray(sizes) ? sizes : [];
+  const cleaned = list
+    .map((x) => ({ size: String(x?.size || "").trim(), qty: n(x?.qty) }))
+    .filter((x) => x.size && x.qty > 0);
+
+  if (!cleaned.length) return "N/A";
+
+  const total = cleaned.reduce((sum, x) => sum + x.qty, 0);
+  const breakdown = cleaned.map((x) => `${x.size}=${x.qty}`).join(", ");
+  return `${breakdown} (total ${total})`;
+}
+
+function normalizeOrientation(v) {
+  const s = String(v || "").trim().toUpperCase();
+  if (!s) return "";
+  if (s.includes("LENGTH")) return "LENGTH_WISE";
+  if (s.includes("WIDTH")) return "WIDTH_WISE";
+  return s;
+}
+
+function orientationUI(v) {
+  const o = normalizeOrientation(v);
+  if (o === "LENGTH_WISE") {
+    return {
+      code: "LENGTH_WISE",
+      label: "Length-wise",
+      explain: "L goes into row depth, W stays across row width",
+      mini: "L → depth",
+    };
+  }
+  if (o === "WIDTH_WISE") {
+    return {
+      code: "WIDTH_WISE",
+      label: "Width-wise",
+      explain: "W goes into row depth, L stays across row width",
+      mini: "W → depth",
+    };
+  }
+  return { code: o || "N/A", label: o || "N/A", explain: "", mini: "" };
+}
+
+function allocBlocksFromAllocations(allocations = [], entriesMap = new Map()) {
+  const blocks = [];
+
+  for (const a of allocations) {
+    const allocationId = idStr(a?._id);
+    const entryId = idStr(a?.entryId);
+    const entry = entriesMap.get(entryId) || {};
+
+    const buyer = String(a?.buyer || entry?.buyer || "Unknown");
+    const qty = n(a?.qtyTotal);
+    const cbm = cartonCbm(a?.cartonDimCm || entry?.cartonDimCm) * qty;
+
+    const metas = Array.isArray(a?.segmentsMeta) ? a.segmentsMeta : [];
+
+    if (metas.length > 0) {
+      for (const m of metas) {
+        const wasted = n(m?.wastedTailCm);
+        const reserved = n(m?.allocatedLenCm);
+        const usedLen = reserved > 0 ? Math.max(0, reserved - wasted) : 0;
+
+        blocks.push({
+          key: `${allocationId}-${m.segmentIndex}-${m.startFromRowStartCm}`,
+          allocationId,
+          entryId,
+          entry,
+          allocation: a,
+          buyer,
+          qty,
+          cbm,
+          segmentIndex: n(m?.segmentIndex),
+          start: n(m?.startFromRowStartCm),
+          end: n(m?.endFromRowStartCm),
+          len: reserved,
+          usedLen,
+          wastedTail: wasted,
+        });
+      }
+    } else {
+      blocks.push({
+        key: `${allocationId}-fallback`,
+        allocationId,
+        entryId,
+        entry,
+        allocation: a,
+        buyer,
+        qty,
+        cbm,
+        segmentIndex: 0,
+        start: n(a?.rowStartAtCm),
+        end: n(a?.rowEndAtCm),
+        len: Math.max(0, n(a?.rowEndAtCm) - n(a?.rowStartAtCm)),
+        usedLen: 0,
+        wastedTail: 0,
+      });
+    }
+  }
+
+  blocks.sort((x, y) => x.start - y.start);
+  return blocks;
+}
+
+function rowHoverText({ row, allocations, buyerStats }) {
+  const totalCartons = allocations.reduce((sum, a) => sum + n(a?.qtyTotal), 0);
+  const totalCbm = allocations.reduce((sum, a) => sum + cartonCbm(a?.cartonDimCm) * n(a?.qtyTotal), 0);
+
+  const buyerRows = Array.from((buyerStats || new Map()).entries())
+    .sort((a, b) => (b[1]?.cartons || 0) - (a[1]?.cartons || 0))
+    .map(([buyer, info]) => {
+      return `${buyer}: ${n(info.cartons)} cartons, ${n(info.cbm).toFixed(3)} cbm, ${n(info.lengthCm).toFixed(1)} cm`;
+    });
+
+  return [
+    `${row.name} (${row.type})`,
+    `Total: ${totalCartons} cartons, ${totalCbm.toFixed(3)} cbm`,
+    buyerRows.length ? "----------------" : "",
+    ...buyerRows,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export default function GraphicalPane({
+  warehouse,
+  selectedRowId,
+  preview,
+  highlightEntryIds = [],
+  dimOthers = false,
+  onSelectRow,
+  refreshKey = 0, // ✅ NEW: force refresh after PO save
+}) {
+  const [rows, setRows] = useState([]);
+  const [allocations, setAllocations] = useState([]);
+  const [entries, setEntries] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(null);
+
+  // ✅ NEW: token selection (click an allocation block)
+  const [tokenSel, setTokenSel] = useState(null); // { rowId, allocationId, entryId }
+  const [printing, setPrinting] = useState(false);
+
+  const lastSigRef = useRef("");
+
+  const load = useCallback(
+    async (signal) => {
+      setLoading(true);
+      try {
+        const headers = { "Cache-Control": "no-cache" };
+
+        const [r, a, e] = await Promise.all([
+          fetch(`/api/rows?warehouse=${warehouse}`, { signal, headers, cache: "no-store" }),
+          fetch(`/api/allocations?warehouse=${warehouse}`, { signal, headers, cache: "no-store" }),
+          fetch(`/api/entries?warehouse=${warehouse}`, { signal, headers, cache: "no-store" }),
+        ]);
+
+        const [rd, ad, ed] = await Promise.all([r.json(), a.json(), e.json()]);
+
+        const nextRows = rd.rows || [];
+        const nextAllocs = ad.allocations || [];
+        const nextEntries = ed.entries || [];
+
+        // ✅ includes refreshKey + more entry signals (so PO edits are detected)
+        const e0 = nextEntries[0] || {};
+        const e10 = nextEntries[10] || {};
+        const eLast = nextEntries[nextEntries.length - 1] || {};
+
+        const sig = [
+          warehouse,
+          "rk:" + String(refreshKey),
+
+          nextRows.length,
+
+          nextAllocs.length,
+          idStr(nextAllocs[0]?._id),
+          nextAllocs[0]?.updatedAt || nextAllocs[0]?.createdAt || "",
+
+          nextEntries.length,
+
+          idStr(e0?._id),
+          e0?.updatedAt || e0?.createdAt || "",
+          e0?.poNumber || "",
+
+          idStr(e10?._id),
+          e10?.updatedAt || e10?.createdAt || "",
+          e10?.poNumber || "",
+
+          idStr(eLast?._id),
+          eLast?.updatedAt || eLast?.createdAt || "",
+          eLast?.poNumber || "",
+        ].join("|");
+
+        if (sig !== lastSigRef.current) {
+          lastSigRef.current = sig;
+          setRows(nextRows);
+          setAllocations(nextAllocs);
+          setEntries(nextEntries);
+          setLastUpdated(new Date());
+        }
+      } catch (err) {
+        if (err?.name !== "AbortError") {
+          // console.error(err);
+        }
+      } finally {
+        setLoading(false);
+      }
+    },
+    [warehouse, refreshKey]
+  );
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    load(ctrl.signal);
+
+    const intervalMs = 8000;
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") load(ctrl.signal);
+    }, intervalMs);
+
+    const onFocus = () => load(ctrl.signal);
+    window.addEventListener("focus", onFocus);
+
+    return () => {
+      clearInterval(t);
+      window.removeEventListener("focus", onFocus);
+      ctrl.abort();
+    };
+  }, [load]);
+
+  // ✅ keep printing state clean
+  useEffect(() => {
+    const onAfter = () => setPrinting(false);
+    window.addEventListener("afterprint", onAfter);
+    return () => window.removeEventListener("afterprint", onAfter);
+  }, []);
+
+  const entriesMap = useMemo(() => {
+    const m = new Map();
+    for (const e of entries) m.set(idStr(e?._id), e);
+    return m;
+  }, [entries]);
+
+  const allocationsByRow = useMemo(() => {
+    const m = new Map();
+    for (const a of allocations) {
+      const k = idStr(a?.rowId);
+      const arr = m.get(k) || [];
+      arr.push(a);
+      m.set(k, arr);
+    }
+    return m;
+  }, [allocations]);
+
+  const allocationsStatsByRow = useMemo(() => {
+    const m = new Map();
+    for (const a of allocations) {
+      const k = idStr(a?.rowId);
+      const qty = n(a?.qtyTotal);
+      const cbm = cartonCbm(a?.cartonDimCm) * qty;
+      const prev = m.get(k) || { cartons: 0, cbm: 0 };
+      prev.cartons += qty;
+      prev.cbm += cbm;
+      m.set(k, prev);
+    }
+    return m;
+  }, [allocations]);
+
+  const allocationsByBuyerByRow = useMemo(() => {
+    const m = new Map();
+    for (const a of allocations) {
+      const rowKey = idStr(a?.rowId);
+      const buyerKey = String(a?.buyer || "Unknown");
+      const rowMap = m.get(rowKey) || new Map();
+
+      const qty = n(a?.qtyTotal);
+      const cbm = cartonCbm(a?.cartonDimCm) * qty;
+      const lengthCm = allocationLengthCm(a);
+
+      const prev = rowMap.get(buyerKey) || { cartons: 0, cbm: 0, lengthCm: 0 };
+      prev.cartons += qty;
+      prev.cbm += cbm;
+      prev.lengthCm += lengthCm;
+
+      rowMap.set(buyerKey, prev);
+      m.set(rowKey, rowMap);
+    }
+    return m;
+  }, [allocations]);
+
+  const highlightSet = useMemo(() => {
+    const s = new Set();
+    for (const id of highlightEntryIds || []) s.add(idStr(id));
+    return s;
+  }, [highlightEntryIds]);
+
+  // ✅ NEW: build token data
+  const tokenData = useMemo(() => {
+    if (!tokenSel?.entryId || !tokenSel?.allocationId || !tokenSel?.rowId) return null;
+
+    const entryId = idStr(tokenSel.entryId);
+    const allocationId = idStr(tokenSel.allocationId);
+    const rowId = idStr(tokenSel.rowId);
+
+    const entry = entriesMap.get(entryId) || {};
+    const allocation = allocations.find((a) => idStr(a?._id) === allocationId) || {};
+    const row = rows.find((r) => idStr(r?._id) === rowId) || {};
+
+    if (!rowId || !allocationId || !entryId || !row?._id) {
+      return {
+        missing: true,
+        entryId,
+        allocationId,
+        rowId,
+        entry,
+        allocation,
+        row,
+      };
+    }
+
+    // allocation blocks (per segment)
+    const blocks = allocBlocksFromAllocations([allocation], entriesMap).filter(
+      (b) => idStr(b.allocationId) === allocationId
+    );
+
+    // rows where THIS entry is allocated (for “rows allocated image”)
+    const relatedRowIds = Array.from(
+      new Set(
+        allocations
+          .filter((a) => idStr(a?.entryId) === entryId)
+          .map((a) => idStr(a?.rowId))
+          .filter(Boolean)
+      )
+    );
+
+    const relatedRows = relatedRowIds
+      .map((rid) => {
+        const r = rows.find((x) => idStr(x?._id) === rid);
+        if (!r) return null;
+        return {
+          row: r,
+          allocations: allocationsByRow.get(rid) || [],
+          buyerStats: allocationsByBuyerByRow.get(rid) || new Map(),
+        };
+      })
+      .filter(Boolean);
+
+    const o = orientationUI(allocation?.orientation || allocation?.manualOrientation);
+    const packTypeLabel = PACK_TYPE_LABEL[entry?.packType] || entry?.packType || "N/A";
+    const sizesLine = sizesText(entry?.sizes);
+
+    const dim = entry?.cartonDimCm || allocation?.cartonDimCm || {};
+    const cbmPerCarton = cartonCbm(dim);
+    const cartons = n(allocation?.qtyTotal);
+    const totalCbm = cbmPerCarton * cartons;
+
+    const tokenId = [
+      "TK",
+      String(entry?.code || entry?.poNumber || entryId).slice(-12),
+      String(row?.name || rowId).replace(/\s+/g, "-").slice(0, 10),
+      String(allocationId).slice(-6),
+    ]
+      .filter(Boolean)
+      .join("-")
+      .toUpperCase();
+
+    return {
+      missing: false,
+      tokenId,
+      entryId,
+      allocationId,
+      rowId,
+      entry,
+      allocation,
+      row,
+      blocks,
+      relatedRows,
+      o,
+      packTypeLabel,
+      sizesLine,
+      dim,
+      cbmPerCarton,
+      cartons,
+      totalCbm,
+      printedAt: new Date(),
+    };
+  }, [tokenSel, entriesMap, allocations, rows, allocationsByRow, allocationsByBuyerByRow]);
+
+  const onPickBlock = useCallback(
+    ({ row, block }) => {
+      const rowId = idStr(row?._id);
+      const allocationId = idStr(block?.allocationId);
+      const entryId = idStr(block?.entryId);
+
+      if (!rowId || !allocationId || !entryId) return;
+
+      // ✅ also select row (nice UX)
+      onSelectRow?.(row);
+
+      setTokenSel({ rowId, allocationId, entryId });
+    },
+    [onSelectRow]
+  );
+
+  const printToken = useCallback(() => {
+    setPrinting(true);
+    // allow DOM to apply print-only rules
+    setTimeout(() => window.print(), 50);
+  }, []);
+
+  return (
+    <>
+      {/* ✅ PRINT RULES: only print token area */}
+      <style jsx global>{`
+        @media print {
+          body * {
+            visibility: hidden !important;
+          }
+          .print-area,
+          .print-area * {
+            visibility: visible !important;
+          }
+          .print-area {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            background: white !important;
+          }
+          .no-print {
+            display: none !important;
+          }
+          @page {
+            margin: 12mm;
+          }
+        }
+      `}</style>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm flex flex-col h-[calc(150vh-180px)]">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-2">
+            <Warehouse className="h-5 w-5 text-slate-700" />
+            <div>
+              <div className="text-lg font-extrabold text-slate-900">Graphical View</div>
+              <div className="text-xs text-slate-500">
+                Warehouse: <span className="font-bold text-slate-700">{warehouse}</span>
+                {lastUpdated ? (
+                  <>
+                    {" "}
+                    • Updated: <span className="font-semibold">{lastUpdated.toLocaleTimeString()}</span>
+                  </>
+                ) : null}{" "}
+                • Auto refresh every 8s
+              </div>
+              <div className="mt-0.5 text-[11px] text-slate-500">
+                Tip: click any colored allocation block to open its <span className="font-bold text-slate-700">Token</span> and print.
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                const ctrl = new AbortController();
+                load(ctrl.signal);
+              }}
+              className="no-print inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-extrabold text-slate-700 hover:bg-slate-50"
+            >
+              <RefreshCcw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+              Refresh
+            </button>
+
+            {tokenData && !tokenData.missing ? (
+              <button
+                onClick={printToken}
+                className="no-print inline-flex items-center gap-2 rounded-xl border border-slate-900 bg-slate-900 px-4 py-2 text-sm font-extrabold text-white hover:bg-slate-800"
+              >
+                <Printer className="h-4 w-4" />
+                Print Token
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        {/* ✅ SCROLL AREA */}
+        <div className="flex-1 overflow-y-auto pr-2 space-y-4">
+          {rows.map((row) => {
+            const rowAllocs = allocationsByRow.get(idStr(row?._id)) || [];
+            const isSelected = idStr(row?._id) === idStr(selectedRowId);
+            const stats = allocationsStatsByRow.get(idStr(row?._id)) || { cartons: 0, cbm: 0 };
+            const buyerStats = allocationsByBuyerByRow.get(idStr(row?._id)) || new Map();
+
+            return (
+              <RowCard
+                key={idStr(row?._id) || row?.name}
+                row={row}
+                allocations={rowAllocs}
+                stats={stats}
+                buyerStats={buyerStats}
+                preview={isSelected ? preview : null}
+                selected={isSelected}
+                entriesMap={entriesMap}
+                onSelectRow={onSelectRow}
+                highlightSet={highlightSet}
+                dimOthers={dimOthers}
+                onPickBlock={onPickBlock} // ✅ NEW
+              />
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ✅ TOKEN MODAL (printable) */}
+      <TokenModal
+        open={!!tokenData}
+        data={tokenData}
+        onClose={() => setTokenSel(null)}
+        onPrint={printToken}
+        printing={printing}
+        entriesMap={entriesMap}
+        allocationsByBuyerByRow={allocationsByBuyerByRow}
+      />
+    </>
+  );
+}
+
+function RowCard({
+  row,
+  allocations,
+  preview,
+  selected,
+  stats,
+  buyerStats,
+  entriesMap,
+  onSelectRow,
+  highlightSet,
+  dimOthers,
+  onPickBlock, // ✅ NEW
+}) {
+  const buyerRows = Array.from(buyerStats.entries()).sort((a, b) => b[1].lengthCm - a[1].lengthCm);
+
+  const orientationSummary = useMemo(() => {
+    const sum = { LENGTH_WISE: 0, WIDTH_WISE: 0, OTHER: 0 };
+    for (const a of allocations) {
+      const o = normalizeOrientation(a?.orientation || a?.manualOrientation);
+      const qty = n(a?.qtyTotal);
+      if (o === "LENGTH_WISE") sum.LENGTH_WISE += qty;
+      else if (o === "WIDTH_WISE") sum.WIDTH_WISE += qty;
+      else sum.OTHER += qty;
+    }
+    return sum;
+  }, [allocations]);
+
+  const rowHasHit = useMemo(() => {
+    if (!highlightSet?.size) return false;
+    return allocations.some((a) => highlightSet.has(idStr(a?.entryId)));
+  }, [allocations, highlightSet]);
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => onSelectRow?.(row)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") onSelectRow?.(row);
+      }}
+      className={`rounded-2xl p-4 transition-all outline-none ${
+        selected
+          ? "cursor-pointer border-2 border-slate-900 bg-slate-50 shadow-sm"
+          : rowHasHit && dimOthers
+          ? "cursor-pointer border-2 border-emerald-500 bg-white shadow-sm"
+          : "cursor-pointer border border-slate-200 bg-white hover:shadow-sm"
+      }`}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-[280px] flex-1">
+          <div className="mb-2 flex flex-wrap items-center gap-3">
+            <div className="text-base font-extrabold text-slate-900">{row.name}</div>
+            <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider text-slate-700">
+              {row.type === "continuous" ? "Continuous" : "Segmented"}
+            </span>
+
+            {row.type === "continuous" ? (
+              <span className="text-sm text-slate-600">
+                <Ruler className="mr-1 inline h-4 w-4 text-slate-500" />
+                Length: <span className="font-semibold">{row.lengthCm}</span> cm
+              </span>
+            ) : (
+              <span className="text-sm text-slate-600">
+                <Layers className="mr-1 inline h-4 w-4 text-slate-500" />
+                {Array.isArray(row.segments) ? `${row.segments.length} segments` : "Segmented"}
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 gap-2 text-sm text-slate-600 sm:grid-cols-3">
+            <div>
+              <span className="font-bold text-slate-800">Width:</span> {row.widthCm} cm
+            </div>
+            <div>
+              <span className="font-bold text-slate-800">Max Height:</span> {row.maxHeightCm} cm
+            </div>
+            <div>
+              <span className="font-bold text-slate-800">Allocations:</span> {allocations.length}
+            </div>
+          </div>
+
+          <div className="mt-2 text-sm text-slate-600">
+            <span className="font-bold text-slate-800">Total Allocated:</span> {stats.cartons} cartons,{" "}
+            {stats.cbm.toFixed(3)} cbm
+          </div>
+
+          {(orientationSummary.LENGTH_WISE > 0 || orientationSummary.WIDTH_WISE > 0) && (
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+              {orientationSummary.LENGTH_WISE > 0 && (
+                <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 font-extrabold text-slate-800">
+                  <ArrowRight className="h-3.5 w-3.5 text-slate-600" />
+                  Stored: <span className="text-slate-900">Length-wise</span>
+                  <span className="text-slate-500">(L → depth)</span>
+                  <span className="text-slate-600">• {orientationSummary.LENGTH_WISE} cartons</span>
+                </span>
+              )}
+              {orientationSummary.WIDTH_WISE > 0 && (
+                <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 font-extrabold text-slate-800">
+                  <ArrowRight className="h-3.5 w-3.5 text-slate-600" />
+                  Stored: <span className="text-slate-900">Width-wise</span>
+                  <span className="text-slate-500">(W → depth)</span>
+                  <span className="text-slate-600">• {orientationSummary.WIDTH_WISE} cartons</span>
+                </span>
+              )}
+            </div>
+          )}
+
+          {buyerRows.length > 0 ? (
+            <div className="mt-3">
+              <div className="mb-2 flex items-center gap-2 text-sm font-extrabold text-slate-900">
+                <BarChart3 className="h-4 w-4 text-slate-700" />
+                By Buyer
+              </div>
+              <div className="space-y-1 text-sm text-slate-600">
+                {buyerRows.map(([buyer, info]) => (
+                  <div key={buyer} className="flex items-center gap-2">
+                    <div className="h-3 w-3 rounded-full" style={{ backgroundColor: colorFromKey(buyer) }} />
+                    <span>
+                      <span className="font-semibold text-slate-800">{buyer}</span>: {info.lengthCm.toFixed(1)} cm,{" "}
+                      {info.cartons} cartons, {info.cbm.toFixed(3)} cbm
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        {preview?.metrics ? (
+          <div className="min-w-[240px] rounded-2xl border border-slate-200 bg-white p-3">
+            <div className="mb-2 flex items-center gap-2 text-sm font-extrabold text-slate-900">
+              <Info className="h-4 w-4 text-slate-700" />
+              Preview
+            </div>
+
+            <div className="grid gap-1 text-sm text-slate-700">
+              <div>
+                <span className="font-semibold">Start:</span> {preview.metrics.rowStartAtCm} cm
+              </div>
+              <div>
+                <span className="font-semibold">End:</span> {preview.metrics.rowEndAtCm} cm
+              </div>
+              <div>
+                <span className="font-semibold">Remaining:</span> {preview.metrics.rowRemainingAfterCm} cm
+              </div>
+
+              {preview.metrics.orientation ? (
+                <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700">
+                  {(() => {
+                    const o = orientationUI(preview.metrics.orientation);
+                    return (
+                      <>
+                        <div className="font-extrabold text-slate-900">
+                          Orientation: {o.label} <span className="font-bold text-slate-500">({o.mini})</span>
+                        </div>
+                        {o.explain ? <div className="mt-0.5 text-slate-600">{o.explain}</div> : null}
+                      </>
+                    );
+                  })()}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="mt-4">
+        <RowBar
+          row={row}
+          allocations={allocations}
+          preview={preview}
+          buyerStats={buyerStats}
+          entriesMap={entriesMap}
+          colorMode="allocation"
+          highlightSet={highlightSet}
+          dimOthers={dimOthers}
+          onPickBlock={onPickBlock} // ✅ NEW
+        />
+      </div>
+    </div>
+  );
+}
+
+function RowBar({
+  row,
+  allocations,
+  preview,
+  buyerStats,
+  entriesMap,
+  colorMode = "allocation",
+  highlightSet,
+  dimOthers = false,
+  onPickBlock, // ✅ NEW
+}) {
+  const W = 520;
+  const H = 110;
+
+  function pillarDiameterAfterSegmentCm(segmentIndex) {
+    if (row?.type !== "segmented") return 0;
+    const p = (row.pillars || []).find((x) => n(x.atSegmentBoundaryIndex) === n(segmentIndex));
+    const d = n(p?.diameterCm);
+    const r = n(p?.radiusCm);
+    if (d > 0) return d;
+    if (r <= 0) return 0;
+    return r >= 40 ? r : 2 * r;
+  }
+
+  const segs =
+    row.type === "continuous"
+      ? [{ segmentIndex: 0, lengthCm: n(row.lengthCm) }]
+      : (row.segments || []).map((s, i) => ({ segmentIndex: i, lengthCm: n(s.lengthCm) }));
+
+  const parts = [];
+  for (let i = 0; i < segs.length; i++) {
+    parts.push({ type: "segment", segmentIndex: segs[i].segmentIndex, lengthCm: segs[i].lengthCm });
+    if (row.type === "segmented" && i < segs.length - 1) {
+      const gap = pillarDiameterAfterSegmentCm(i);
+      if (gap > 0) parts.push({ type: "pillar", boundaryIndex: i, lengthCm: gap });
+    }
+  }
+
+  const totalPhysicalLen = parts.reduce((sum, p) => sum + n(p.lengthCm), 0);
+  const safeTotalLen = totalPhysicalLen > 0 ? totalPhysicalLen : 1;
+  const sx = (cm) => (n(cm) / safeTotalLen) * W;
+
+  let xCursor = 0;
+  let cmCursor = 0;
+
+  const segmentRects = [];
+  const pillarRects = [];
+
+  for (const p of parts) {
+    const wPx = sx(p.lengthCm);
+    const xPx = xCursor;
+    const startCm = cmCursor;
+    const endCm = cmCursor + n(p.lengthCm);
+
+    if (p.type === "segment") {
+      segmentRects.push({
+        segmentIndex: p.segmentIndex,
+        segX: xPx,
+        segW: wPx,
+        segLen: n(p.lengthCm),
+        startCm,
+        endCm,
+      });
+    } else {
+      pillarRects.push({
+        boundaryIndex: p.boundaryIndex,
+        gapCm: n(p.lengthCm),
+        x: xPx,
+        w: wPx,
+        startCm,
+        endCm,
+      });
+    }
+
+    xCursor += wPx;
+    cmCursor += n(p.lengthCm);
+  }
+
+  const baseTip = rowHoverText({ row, allocations, buyerStats });
+
+  const clipRowId = `clip-row-${String(row._id || row.name).replace(/\s+/g, "-")}`;
+  const clipSegId = `clip-segs-${String(row._id || row.name).replace(/\s+/g, "-")}`;
+
+  const blocks = allocBlocksFromAllocations(allocations, entriesMap);
+
+  const previewBlocks = Array.isArray(preview?.segmentsMeta)
+    ? preview.segmentsMeta.map((m, idx) => ({
+        key: `pv-${idx}-${m.segmentIndex}-${m.startFromRowStartCm}`,
+        start: n(m.startFromRowStartCm),
+        len: n(m.allocatedLenCm),
+      }))
+    : [];
+
+  const y = 18;
+  const h = 58;
+
+  const hasHighlights = !!highlightSet?.size;
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-3">
+      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="w-full">
+        <defs>
+          <clipPath id={clipRowId}>
+            <rect x="0" y={y} width={W} height={h} rx="14" />
+          </clipPath>
+
+          <clipPath id={clipSegId}>
+            {segmentRects.map((r) => (
+              <rect key={`c-${r.segmentIndex}`} x={r.segX} y={y} width={r.segW} height={h} />
+            ))}
+          </clipPath>
+
+          <linearGradient id="segmentGradient" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#ffffff" />
+            <stop offset="100%" stopColor="#f8fafc" />
+          </linearGradient>
+
+          <radialGradient id="pillarGrad" cx="35%" cy="30%" r="70%">
+            <stop offset="0%" stopColor="#ffffff" stopOpacity="1" />
+            <stop offset="55%" stopColor="#cbd5e1" stopOpacity="1" />
+            <stop offset="100%" stopColor="#64748b" stopOpacity="1" />
+          </radialGradient>
+
+          <pattern id="pillarHatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <line x1="0" y1="0" x2="0" y2="8" stroke="#0f172a" strokeOpacity="0.18" strokeWidth="2" />
+          </pattern>
+        </defs>
+
+        <rect x="0" y={y} width={W} height={h} fill="url(#segmentGradient)" stroke="#0f172a" strokeWidth="2" rx="14">
+          <title>{baseTip}</title>
+        </rect>
+
+        {segmentRects.map((r, i) => {
+          const tip = [`Segment ${i + 1}`, `Length: ${r.segLen} cm`, `Position: ${r.startCm} → ${r.endCm} cm`].join("\n");
+          return (
+            <g key={`seg-${r.segmentIndex}-${i}`}>
+              <rect
+                x={r.segX}
+                y={y}
+                width={r.segW}
+                height={h}
+                fill={colorFromKey(`seg-${i}`)}
+                opacity="0.08"
+                clipPath={`url(#${clipRowId})`}
+              >
+                <title>{tip}</title>
+              </rect>
+              <rect x={r.segX} y={y} width={r.segW} height={h} fill="transparent" stroke="#cbd5e1" strokeWidth="1" />
+              <text x={r.segX + r.segW / 2} y={y + h / 2 + 4} textAnchor="middle" fontSize="11" fontWeight="800" fill="#334155">
+                {r.segLen} cm
+              </text>
+            </g>
+          );
+        })}
+
+        <g clipPath={`url(#${clipSegId})`}>
+          {blocks.map((b) => {
+            const x = sx(b.start);
+            const w = sx(b.len);
+            if (w <= 0) return null;
+
+            const isHit = hasHighlights ? highlightSet.has(idStr(b.entryId)) : false;
+            const opacity = hasHighlights && dimOthers ? (isHit ? 0.75 : 0.08) : 0.5;
+
+            const fillKey = colorMode === "buyer" ? b.buyer : b.allocationId;
+
+            const entry = b.entry || {};
+            const alloc = b.allocation || {};
+
+            const dim = entry.cartonDimCm || alloc.cartonDimCm || {};
+            const o = orientationUI(alloc.orientation || alloc.manualOrientation);
+
+            const packTypeLabel = PACK_TYPE_LABEL[entry.packType] || entry.packType || "N/A";
+            const sizesLine = sizesText(entry.sizes);
+
+            const createdBy = entry.createdBy || {};
+            const inputter = `${createdBy.user_name || "N/A"} (${createdBy.role || "N/A"})`;
+
+            const orientationLine = o.code === "N/A" ? "Orientation: N/A" : `Orientation: ${o.label} (${o.mini})`;
+            const orientationExplain = o.explain ? `Meaning: ${o.explain}` : "";
+
+            const tip = [
+              `Entry: ${entry.code || "N/A"}`,
+              `Buyer: ${b.buyer}`,
+              `Warehouse: ${entry.warehouse || alloc.warehouse || "N/A"}`,
+              `Floor: ${entry.floor || "N/A"} | Factory: ${createdBy.factory || "N/A"} | Assigned Building: ${
+                createdBy.assigned_building || "N/A"
+              }`,
+              `Inputter: ${inputter}`,
+              `---`,
+              `Season: ${entry.season || "N/A"} | PO: ${entry.poNumber || "N/A"}`,
+              `Style: ${entry.style || "N/A"} | Model: ${entry.model || "N/A"}`,
+              `Item: ${entry.item || "N/A"} | Color: ${entry.color || "N/A"}`,
+              `Pack Type: ${packTypeLabel}`,
+              `Sizes/Carton: ${sizesLine}`,
+              `---`,
+              `Cartons: ${b.qty} | Pcs/Carton: ${entry.pcsPerCarton ?? "N/A"} | Total Pcs: ${entry.totalQty ?? "N/A"}`,
+              `Dims: ${n(dim.w)}×${n(dim.l)}×${n(dim.h)} cm`,
+              `Total CBM: ${b.cbm.toFixed(3)}`,
+              `---`,
+              `Start: ${b.start} cm → End: ${b.end} cm`,
+              `Reserved: ${b.len} cm${b.usedLen ? ` | Used: ${b.usedLen} cm` : ""}${b.wastedTail ? ` | Wasted: ${b.wastedTail} cm` : ""}`,
+              orientationLine,
+              orientationExplain,
+              `Across: ${alloc.across || "N/A"} | Layers: ${alloc.layers || "N/A"}`,
+              `Depth/Column: ${alloc.columnDepthCm || "N/A"} cm`,
+              `---`,
+              `Updated: ${formatDate(entry.updatedAt)} | Created: ${formatDate(entry.createdAt)} | Status: ${entry.status || "N/A"}`,
+            ]
+              .filter(Boolean)
+              .join("\n");
+
+            return (
+              <rect
+                key={b.key}
+                x={x}
+                y={y}
+                width={w}
+                height={h}
+                fill={colorFromKey(fillKey)}
+                opacity={opacity}
+                stroke={isHit ? "#0f172a" : "none"}
+                strokeWidth={isHit ? 2 : 0}
+                className="hover:opacity-70 transition-opacity cursor-pointer"
+                // ✅ NEW: click block → open token
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onPickBlock?.({ row, block: b });
+                }}
+              >
+                <title>{tip}</title>
+              </rect>
+            );
+          })}
+        </g>
+
+        <g clipPath={`url(#${clipSegId})`}>
+          {previewBlocks.map((p) => {
+            const x = sx(p.start);
+            const w = sx(p.len);
+            if (w <= 0) return null;
+            return (
+              <rect key={p.key} x={x} y={y} width={w} height={h} fill="#ef4444" opacity="0.22">
+                <title>Preview (not saved)</title>
+              </rect>
+            );
+          })}
+        </g>
+
+        {pillarRects.map((p) => {
+          const tip = [`Pillar (blocked)`, `Diameter: ${p.gapCm} cm`, `Position: ${p.startCm} → ${p.endCm} cm`].join("\n");
+
+          const cx = p.x + p.w / 2;
+          const cy = y + h / 2;
+          const rPx = Math.max(10, Math.min(h / 2 - 4, p.w / 2 - 4));
+
+          return (
+            <g key={`pillar-${p.boundaryIndex}`}>
+              <rect x={p.x} y={y} width={p.w} height={h} fill="#ffffff" />
+              <rect x={p.x} y={y} width={p.w} height={h} fill="url(#pillarHatch)" opacity="0.45" />
+              <rect x={p.x} y={y} width={p.w} height={h} fill="transparent" stroke="#64748b" strokeWidth="1.5" strokeDasharray="6 4">
+                <title>{tip}</title>
+              </rect>
+              <circle cx={cx} cy={cy} r={rPx} fill="url(#pillarGrad)" stroke="#0f172a" strokeOpacity="0.45" strokeWidth="2">
+                <title>{tip}</title>
+              </circle>
+              <text x={cx} y={y + 14} textAnchor="middle" fontSize="10" fill="#0f172a" fontWeight="900">
+                {p.gapCm}cm
+              </text>
+            </g>
+          );
+        })}
+
+        <text x="10" y="102" fontSize="10" fill="#64748b" fontWeight="700">
+          Hover blocks for details • Click a block for token • Red = preview • Pillar = blocked
+        </text>
+      </svg>
+
+      <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-600">
+        <span className="inline-flex items-center gap-1">
+          <Package className="h-4 w-4 text-slate-500" />
+          Allocations
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <Ruler className="h-4 w-4 text-slate-500" />
+          Segment lengths
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <Layers className="h-4 w-4 text-slate-500" />
+          Preview overlay
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function TokenModal({ open, data, onClose, onPrint, printing }) {
+  if (!open) return null;
+
+  const missing = !!data?.missing;
+
+  const entry = data?.entry || {};
+  const alloc = data?.allocation || {};
+  const row = data?.row || {};
+
+  const createdBy = entry?.createdBy || {};
+  const inputter = `${createdBy.user_name || "N/A"} (${createdBy.role || "N/A"})`;
+
+  const orientationLine =
+    data?.o?.code === "N/A" ? "N/A" : `${data?.o?.label} (${data?.o?.mini || ""})`.trim();
+
+  const placeFrom = data?.blocks?.length
+    ? `${data.blocks[0].start} cm → ${data.blocks[data.blocks.length - 1].end} cm`
+    : `${n(alloc?.rowStartAtCm)} cm → ${n(alloc?.rowEndAtCm)} cm`;
+
+  const steps = [
+    `Go to Row: ${row?.name || "N/A"} (${row?.type || "N/A"})`,
+    `Place cartons starting at: ${placeFrom} (from row start)`,
+    `Orientation: ${orientationLine}${data?.o?.explain ? ` — ${data.o.explain}` : ""}`,
+    `Across (width): ${alloc?.across ?? "N/A"} cartons • Layers (height): ${alloc?.layers ?? "N/A"}`,
+    `Depth per column: ${alloc?.columnDepthCm ?? "N/A"} cm`,
+    row?.type === "segmented" ? `Avoid pillar/gap areas (see hatched sections).` : null,
+  ].filter(Boolean);
+
+  const highlightSet = useMemo(() => new Set([idStr(data?.entryId)]), [data?.entryId]);
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-start justify-center p-4">
+      {/* backdrop */}
+      <div className="no-print absolute inset-0 bg-black/40" onClick={onClose} />
+
+      {/* PRINT AREA */}
+      <div className="print-area relative z-10 w-full max-w-5xl">
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-xl">
+          {/* header */}
+          <div className="flex items-start justify-between gap-3 border-b border-slate-200 p-4">
+            <div>
+              <div className="text-lg font-extrabold text-slate-900">FG Placement Token</div>
+              <div className="mt-0.5 text-xs text-slate-600">
+                Token ID: <span className="font-extrabold text-slate-900">{data?.tokenId || "N/A"}</span>
+                {"  "}• Printed:{" "}
+                <span className="font-semibold text-slate-800">{data?.printedAt ? data.printedAt.toLocaleString() : "N/A"}</span>
+                {printing ? <span className="ml-2 font-bold text-slate-500">(printing…)</span> : null}
+              </div>
+              <div className="mt-1 text-[11px] text-slate-500">
+                This token tells the floor team where to put cartons, and how the carton orientation should be.
+              </div>
+            </div>
+
+            <div className="no-print flex items-center gap-2">
+              <button
+                onClick={onPrint}
+                disabled={missing}
+                className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-extrabold ${
+                  missing ? "bg-slate-200 text-slate-500" : "bg-slate-900 text-white hover:bg-slate-800"
+                }`}
+              >
+                <Printer className="h-4 w-4" />
+                Print
+              </button>
+
+              <button
+                onClick={onClose}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-extrabold text-slate-700 hover:bg-slate-50"
+              >
+                <X className="h-4 w-4" />
+                Close
+              </button>
+            </div>
+          </div>
+
+          {/* body */}
+          <div className="p-4 space-y-4">
+            {missing ? (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                Token data is missing (maybe refreshed). Please click the allocation block again.
+              </div>
+            ) : null}
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="rounded-2xl border border-slate-200 p-4">
+                <div className="text-sm font-extrabold text-slate-900">Entry Details</div>
+                <div className="mt-2 grid gap-1 text-sm text-slate-700">
+                  <div>
+                    <span className="font-semibold">Entry Code:</span> {entry?.code || "N/A"}
+                  </div>
+                  <div>
+                    <span className="font-semibold">Buyer:</span> {alloc?.buyer || entry?.buyer || "N/A"}
+                  </div>
+                  <div>
+                    <span className="font-semibold">Season:</span> {entry?.season || "N/A"} •{" "}
+                    <span className="font-semibold">PO:</span> {entry?.poNumber || "N/A"}
+                  </div>
+                  <div>
+                    <span className="font-semibold">Style:</span> {entry?.style || "N/A"} •{" "}
+                    <span className="font-semibold">Color:</span> {entry?.color || "N/A"}
+                  </div>
+                  <div>
+                    <span className="font-semibold">Pack Type:</span> {data?.packTypeLabel || "N/A"}
+                  </div>
+                  <div>
+                    <span className="font-semibold">Sizes/Carton:</span> {data?.sizesLine || "N/A"}
+                  </div>
+
+                  <div className="mt-2 border-t border-slate-200 pt-2">
+                    <div>
+                      <span className="font-semibold">Cartons:</span> {data?.cartons ?? "N/A"} •{" "}
+                      <span className="font-semibold">CBM/Carton:</span>{" "}
+                      {Number.isFinite(data?.cbmPerCarton) ? data.cbmPerCarton.toFixed(4) : "N/A"} •{" "}
+                      <span className="font-semibold">Total CBM:</span>{" "}
+                      {Number.isFinite(data?.totalCbm) ? data.totalCbm.toFixed(3) : "N/A"}
+                    </div>
+                    <div className="text-slate-600">
+                      <span className="font-semibold">Dims:</span> {n(data?.dim?.w)}×{n(data?.dim?.l)}×{n(data?.dim?.h)} cm
+                    </div>
+                  </div>
+
+                  <div className="mt-2 border-t border-slate-200 pt-2 text-xs text-slate-600">
+                    Inputter: <span className="font-semibold text-slate-800">{inputter}</span>
+                    <div className="mt-0.5">
+                      Updated: <span className="font-semibold">{formatDate(entry?.updatedAt)}</span> • Status:{" "}
+                      <span className="font-semibold">{entry?.status || "N/A"}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 p-4">
+                <div className="text-sm font-extrabold text-slate-900">How to Place Cartons</div>
+                <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-slate-700">
+                  {steps.map((s, idx) => (
+                    <li key={idx}>{s}</li>
+                  ))}
+                </ol>
+
+                <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+                  <div className="font-extrabold text-slate-900">Orientation Meaning</div>
+                  <div className="mt-1">
+                    <span className="font-semibold">Length-wise:</span> L → depth, W stays across
+                  </div>
+                  <div>
+                    <span className="font-semibold">Width-wise:</span> W → depth, L stays across
+                  </div>
+                </div>
+
+                <div className="mt-3 rounded-xl border border-slate-200 p-3 text-xs text-slate-700">
+                  <div className="font-extrabold text-slate-900">Placement Plan (cm from row start)</div>
+                  <div className="mt-2 overflow-x-auto">
+                    <table className="w-full text-left text-[11px]">
+                      <thead>
+                        <tr className="border-b border-slate-200 text-slate-600">
+                          <th className="py-1 pr-2">Seg</th>
+                          <th className="py-1 pr-2">Start</th>
+                          <th className="py-1 pr-2">End</th>
+                          <th className="py-1 pr-2">Reserved</th>
+                          <th className="py-1 pr-2">Used</th>
+                          <th className="py-1 pr-2">Wasted</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(data?.blocks || []).map((b) => (
+                          <tr key={b.key} className="border-b border-slate-100">
+                            <td className="py-1 pr-2 font-bold text-slate-800">{n(b.segmentIndex) + 1}</td>
+                            <td className="py-1 pr-2">{n(b.start)}</td>
+                            <td className="py-1 pr-2">{n(b.end)}</td>
+                            <td className="py-1 pr-2">{n(b.len)}</td>
+                            <td className="py-1 pr-2">{n(b.usedLen) || "-"}</td>
+                            <td className="py-1 pr-2">{n(b.wastedTail) || "-"}</td>
+                          </tr>
+                        ))}
+                        {!data?.blocks?.length ? (
+                          <tr>
+                            <td colSpan={6} className="py-2 text-slate-500">
+                              N/A
+                            </td>
+                          </tr>
+                        ) : null}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* ✅ rows allocated image for this entry/style */}
+            <div className="rounded-2xl border border-slate-200 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="text-sm font-extrabold text-slate-900">Rows Allocated (Image)</div>
+                  <div className="text-xs text-slate-600">
+                    Highlight = this entry • Other allocations are dimmed
+                  </div>
+                </div>
+                <div className="text-xs text-slate-500">
+                  Row count: <span className="font-bold text-slate-700">{data?.relatedRows?.length || 0}</span>
+                </div>
+              </div>
+
+              <div className="mt-3 space-y-3">
+                {(data?.relatedRows || []).map(({ row: r, allocations, buyerStats }) => (
+                  <div key={idStr(r?._id)} className="rounded-2xl border border-slate-200 p-3">
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-sm font-extrabold text-slate-900">{r?.name}</div>
+                      <div className="text-xs text-slate-600">
+                        Width: <span className="font-bold">{r?.widthCm}</span> cm • Max H:{" "}
+                        <span className="font-bold">{r?.maxHeightCm}</span> cm • Type:{" "}
+                        <span className="font-bold">{r?.type}</span>
+                      </div>
+                    </div>
+
+                    <RowBar
+                      row={r}
+                      allocations={allocations}
+                      preview={null}
+                      buyerStats={buyerStats}
+                      entriesMap={new Map()} // not needed for printing tooltips, but RowBar expects it
+                      colorMode="allocation"
+                      highlightSet={highlightSet}
+                      dimOthers={true}
+                    />
+                  </div>
+                ))}
+
+                {!data?.relatedRows?.length ? (
+                  <div className="text-sm text-slate-500">No related rows found.</div>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="text-[11px] text-slate-500">
+              Note: “Start/End” are measured from the row start (left side of the bar). Hatched sections are pillars/gaps
+              where cartons must not be placed.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -118,6 +118,7 @@ export default function FGSearchPage() {
     setErr("");
     try {
       const url = `/api/fg-search${qs ? `?${qs}` : ""}`;
+      
       const res = await fetch(url);
       const data = await res.json();
       if (!data.ok) throw new Error(data.message || "Search failed");

@@ -30,7 +30,11 @@ export async function GET(req) {
 
   const q = {};
 
-  // ✅ NEW: filter by warehouse
+  // ✅ IMPORTANT: Don't show shipped entries
+  // (use $ne:true so older docs without "shipped" still show)
+  q.shipped = { $ne: true };
+
+  // filter by warehouse
   if (warehouse && WAREHOUSES.has(warehouse)) q.warehouse = warehouse;
 
   if (buyer) q.buyer = buyer;
@@ -51,7 +55,6 @@ export async function GET(req) {
 
   const entryIds = entries.map((e) => e._id);
   const allocations = await Allocation.find({ entryId: { $in: entryIds } }).lean();
-
   const allocMap = new Map(allocations.map((a) => [String(a.entryId), a]));
 
   const results = entries.map((entry) => ({
