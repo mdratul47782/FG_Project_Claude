@@ -75,11 +75,18 @@ function makeCartonId(entry, cartonNo) {
   return `${base}-${serial}`;
 }
 
+// ✅ uppercase helper for manual inputs
+function upper(v) {
+  return String(v ?? "").toUpperCase();
+}
+
 export default function FGSearchPage() {
   const [warehouse, setWarehouse] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [buyer, setBuyer] = useState("");
+
+  // ✅ manual input => uppercase
   const [poNumber, setPoNumber] = useState("");
   const [style, setStyle] = useState("");
 
@@ -108,8 +115,11 @@ export default function FGSearchPage() {
     if (from) p.set("from", from);
     if (to) p.set("to", to);
     if (buyer) p.set("buyer", buyer);
-    if (poNumber) p.set("poNumber", poNumber);
-    if (style) p.set("style", style);
+
+    // ✅ send uppercase to backend too
+    if (poNumber.trim()) p.set("poNumber", poNumber.trim().toUpperCase());
+    if (style.trim()) p.set("style", style.trim().toUpperCase());
+
     return p.toString();
   }, [warehouse, from, to, buyer, poNumber, style]);
 
@@ -118,7 +128,7 @@ export default function FGSearchPage() {
     setErr("");
     try {
       const url = `/api/fg-search${qs ? `?${qs}` : ""}`;
-      
+
       const res = await fetch(url);
       const data = await res.json();
       if (!data.ok) throw new Error(data.message || "Search failed");
@@ -163,11 +173,11 @@ export default function FGSearchPage() {
       const end = clamp(Number(cartonTo) || total, start, total);
 
       const cartons = Array.from({ length: end - start + 1 }, (_, i) => start + i);
-      
+
       console.log(`Printing cartons ${start} to ${end} (${cartons.length} labels)`);
       setPrintCartons(cartons);
 
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       window.print();
 
@@ -231,17 +241,24 @@ export default function FGSearchPage() {
               </select>
             </Field>
 
+            {/* ✅ PO uppercase */}
             <Field icon={Hash} label="PO Number">
               <input
                 className="input"
                 value={poNumber}
-                onChange={(e) => setPoNumber(e.target.value)}
+                onChange={(e) => setPoNumber(upper(e.target.value))}
                 placeholder="e.g. 4523636402"
               />
             </Field>
 
+            {/* ✅ Style uppercase */}
             <Field icon={Shirt} label="Style">
-              <input className="input" value={style} onChange={(e) => setStyle(e.target.value)} placeholder="e.g. 326668" />
+              <input
+                className="input"
+                value={style}
+                onChange={(e) => setStyle(upper(e.target.value))}
+                placeholder="e.g. 326668"
+              />
             </Field>
           </div>
 
@@ -250,7 +267,9 @@ export default function FGSearchPage() {
               onClick={handleSearch}
               disabled={loading}
               className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-extrabold transition ${
-                loading ? "cursor-not-allowed bg-slate-200 text-slate-500" : "bg-amber-400 text-slate-950 hover:bg-amber-300"
+                loading
+                  ? "cursor-not-allowed bg-slate-200 text-slate-500"
+                  : "bg-amber-400 text-slate-950 hover:bg-amber-300"
               }`}
             >
               <Search className="h-4 w-4" />
@@ -271,7 +290,9 @@ export default function FGSearchPage() {
           </div>
 
           {err ? (
-            <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm font-bold text-rose-800">{err}</div>
+            <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm font-bold text-rose-800">
+              {err}
+            </div>
           ) : null}
         </div>
 
@@ -327,7 +348,9 @@ export default function FGSearchPage() {
                           <Printer className="h-4 w-4" />
                           {btnLabel}
                         </button>
-                        <div className="mt-1 text-[10px] text-slate-500">{entry.printed ? "Printed ✓" : "Not printed"}</div>
+                        <div className="mt-1 text-[10px] text-slate-500">
+                          {entry.printed ? "Printed ✓" : "Not printed"}
+                        </div>
                       </TD>
                     </tr>
                   );
@@ -395,13 +418,24 @@ export default function FGSearchPage() {
               </div>
 
               <div className="mb-3 rounded-lg bg-blue-50 border border-blue-200 p-3 text-xs text-blue-800">
-                <strong>Preview:</strong> Will print {Math.max(1, Math.min(Number(cartonTo) || 1, Math.max(1, n(printEntry.cartonQty))) - Math.max(1, Number(cartonFrom) || 1) + 1)} label(s) 
-                (Carton {Math.max(1, Number(cartonFrom) || 1)} to {Math.min(Number(cartonTo) || 1, Math.max(1, n(printEntry.cartonQty)))})
+                <strong>Preview:</strong> Will print{" "}
+                {Math.max(
+                  1,
+                  Math.min(Number(cartonTo) || 1, Math.max(1, n(printEntry.cartonQty))) -
+                    Math.max(1, Number(cartonFrom) || 1) +
+                    1
+                )}{" "}
+                label(s) (Carton {Math.max(1, Number(cartonFrom) || 1)} to{" "}
+                {Math.min(Number(cartonTo) || 1, Math.max(1, n(printEntry.cartonQty)))})
               </div>
 
               {/* Preview Area */}
               <div className="rounded-xl border border-slate-300 bg-white p-3 max-h-[300px] overflow-y-auto">
-                <CartonLabel entry={printEntry} cartonNo={Number(cartonFrom) || 1} total={Math.max(1, n(printEntry.cartonQty))} />
+                <CartonLabel
+                  entry={printEntry}
+                  cartonNo={Number(cartonFrom) || 1}
+                  total={Math.max(1, n(printEntry.cartonQty))}
+                />
               </div>
             </div>
 
@@ -420,7 +454,9 @@ export default function FGSearchPage() {
                 onClick={handlePrintNow}
                 disabled={printing}
                 className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-extrabold transition ${
-                  printing ? "cursor-not-allowed bg-slate-200 text-slate-500" : "bg-amber-400 text-slate-950 hover:bg-amber-300"
+                  printing
+                    ? "cursor-not-allowed bg-slate-200 text-slate-500"
+                    : "bg-amber-400 text-slate-950 hover:bg-amber-300"
                 }`}
               >
                 <Printer className="h-4 w-4" />
@@ -432,9 +468,14 @@ export default function FGSearchPage() {
       ) : null}
 
       {/* HIDDEN PRINT AREA - Only visible during printing */}
-      <div id="print-area" style={{ display: 'none' }}>
+      <div id="print-area" style={{ display: "none" }}>
         {printCartons.map((cartonNo) => (
-          <CartonLabel key={cartonNo} entry={printEntry} cartonNo={cartonNo} total={Math.max(1, n(printEntry?.cartonQty || 0))} />
+          <CartonLabel
+            key={cartonNo}
+            entry={printEntry}
+            cartonNo={cartonNo}
+            total={Math.max(1, n(printEntry?.cartonQty || 0))}
+          />
         ))}
       </div>
 
@@ -455,17 +496,15 @@ export default function FGSearchPage() {
 
         /* ✅ PRINT STYLES - Perfect centering on any paper size */
         @media print {
-          /* Hide everything except print area */
           body * {
             visibility: hidden !important;
           }
-          
+
           #print-area,
           #print-area * {
             visibility: visible !important;
           }
 
-          /* Position print area */
           #print-area {
             position: absolute !important;
             left: 0 !important;
@@ -474,7 +513,6 @@ export default function FGSearchPage() {
             display: block !important;
           }
 
-          /* Each label perfectly centered on its own page */
           .label-page {
             page-break-after: always;
             break-after: page;
@@ -490,19 +528,16 @@ export default function FGSearchPage() {
             box-sizing: border-box !important;
           }
 
-          /* Remove page break from last label */
           .label-page:last-child {
             page-break-after: auto;
             break-after: auto;
           }
 
-          /* Zero margins for perfect centering */
           @page {
             margin: 0;
             size: auto;
           }
 
-          /* Label content container - centered */
           .label-content {
             width: 100% !important;
             max-width: 90vw !important;
@@ -513,7 +548,6 @@ export default function FGSearchPage() {
             justify-content: center !important;
           }
 
-          /* Responsive text sizing - matching original sizes */
           .label-line {
             font-size: clamp(14px, 1.5vw, 24px) !important;
             font-weight: 700 !important;
@@ -523,7 +557,7 @@ export default function FGSearchPage() {
             text-align: center !important;
             width: 100% !important;
           }
-          
+
           .label-id {
             font-size: clamp(12px, 1.3vw, 20px) !important;
             font-weight: 800 !important;
@@ -531,7 +565,7 @@ export default function FGSearchPage() {
             text-align: center !important;
             width: 100% !important;
           }
-          
+
           .label-code {
             font-size: clamp(16px, 2vw, 32px) !important;
             font-weight: 900 !important;
@@ -541,7 +575,6 @@ export default function FGSearchPage() {
             width: 100% !important;
           }
 
-          /* Barcode container - perfectly centered */
           .label-barcode-container {
             margin: 1.5vh 0 !important;
             width: 100% !important;
@@ -559,7 +592,6 @@ export default function FGSearchPage() {
           }
         }
 
-        /* Regular screen styles for labels */
         .label-page {
           text-align: center;
           padding: 20px;
@@ -572,7 +604,7 @@ export default function FGSearchPage() {
           flex-direction: column;
           align-items: center;
         }
-        
+
         .label-line {
           font-size: 16px;
           font-weight: 700;
@@ -581,14 +613,14 @@ export default function FGSearchPage() {
           word-wrap: break-word;
           overflow-wrap: break-word;
         }
-        
+
         .label-id {
           font-size: 14px;
           font-weight: 800;
           margin-top: 12px;
           margin-bottom: 12px;
         }
-        
+
         .label-code {
           font-size: 20px;
           font-weight: 900;
@@ -615,9 +647,9 @@ export default function FGSearchPage() {
 
 function CartonLabel({ entry, cartonNo, total }) {
   const buyer = normalizeBuyer(entry?.buyer);
-  const po = entry?.poNumber || "TBA";
+  const po = String(entry?.poNumber || "TBA").toUpperCase(); // ✅ keep PO uppercase in label
   const size = pickSizeForLabel(entry?.sizes);
-  const style = entry?.style || "-";
+  const style = String(entry?.style || "-").toUpperCase(); // ✅ keep style uppercase in label
   const color = String(entry?.color || "-").toUpperCase();
   const cartonId = makeCartonId(entry, cartonNo);
   const pcsPerCarton = n(entry?.pcsPerCarton);
@@ -636,15 +668,7 @@ function CartonLabel({ entry, cartonNo, total }) {
         <div className="label-id">Car Id : {cartonId}</div>
 
         <div className="label-barcode-container">
-          <Barcode 
-            value={cartonId} 
-            format="CODE128" 
-            renderer="svg" 
-            height={100} 
-            width={3} 
-            displayValue={false} 
-            margin={0} 
-          />
+          <Barcode value={cartonId} format="CODE128" renderer="svg" height={100} width={3} displayValue={false} margin={0} />
         </div>
 
         <div className="label-code">{cartonId}</div>

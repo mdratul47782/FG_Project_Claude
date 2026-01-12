@@ -5,7 +5,17 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/app/hooks/useAuth";
-import { Home, Warehouse, Layers, LogOut, LogIn, User ,ScanBarcode} from "lucide-react";
+import {
+  Home,
+  Warehouse,
+  Layers,
+  LogOut,
+  LogIn,
+  User,
+  ScanBarcode,
+  Rows3,
+  Ship // ✅ new icon for rows
+} from "lucide-react";
 
 export default function SideNavbar() {
   const { auth, setAuth } = useAuth();
@@ -33,16 +43,6 @@ export default function SideNavbar() {
   const LABEL_ACTIVE = "text-amber-700";
   const LABEL_INACTIVE = "text-slate-500 group-hover:text-slate-800";
 
-  // ✅ Your project routes
-  const navItems = [
-    { href: "/", label: "Home", icon: Home },
-    { href: "/fg", label: "FG Entry", icon: Warehouse },
-    { href: "/style-allocations", label: "Style Alloc", icon: Layers },
-    { href: "/fg-search", label: "FG Search", icon: ScanBarcode },
-    
-  ];
-  
-
   // ✅ active matcher (supports nested routes)
   const isActive = (href) =>
     pathname === href || (href !== "/" && pathname?.startsWith(`${href}/`));
@@ -68,6 +68,18 @@ export default function SideNavbar() {
 
   const AUTH_BTN = "h-8 w-8";
   const AUTH_ICON_SIZE = 14;
+
+  // ✅ Your project routes (added: /scan-shipment + /rows-two-side)
+  const navItems = [
+    { href: "/", label: "Home", icon: Home },
+    { href: "/fg", label: "FG Entry", icon: Warehouse },
+    { href: "/style-allocations", label: "Style Alloc", icon: Layers },
+    { href: "/fg-search", label: "FG Search", icon: ScanBarcode },
+
+    // ✅ NEW
+    { href: "/scan-shipment", label: "Shipment", icon: Ship },
+    { href: "/rows-two-side", label: "Rows View", icon: Rows3 },
+  ];
 
   return (
     <aside

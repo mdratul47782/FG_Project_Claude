@@ -48,8 +48,15 @@ function piecesBySizeFromEntry(entry) {
   return m;
 }
 
+// ✅ uppercase helper
+function upper(v) {
+  return String(v ?? "").toUpperCase();
+}
+
 export default function StyleAllocationsPage() {
   const [warehouse, setWarehouse] = useState("B1");
+
+  // ✅ manual inputs (uppercase)
   const [style, setStyle] = useState("");
   const [buyer, setBuyer] = useState(""); // "" => all buyers
   const [color, setColor] = useState(""); // "" => all colors
@@ -100,9 +107,7 @@ export default function StyleAllocationsPage() {
     // sizes order uses API order if present (best)
     const sizes = data?.sizes?.length
       ? data.sizes
-      : Array.from(
-          new Set(rows.flatMap((r) => Object.keys(r.bySize || {})))
-        ).sort();
+      : Array.from(new Set(rows.flatMap((r) => Object.keys(r.bySize || {})))).sort();
 
     return { rows, sizes };
   }, [data?.entries, data?.sizes]);
@@ -118,7 +123,9 @@ export default function StyleAllocationsPage() {
     try {
       const qs = new URLSearchParams({ warehouse, style: s });
       if (buyer) qs.set("buyer", buyer);
-      if (color.trim()) qs.set("color", color.trim());
+
+      const c = color.trim();
+      if (c) qs.set("color", c);
 
       const res = await fetch(`/api/styles/search?${qs.toString()}`, { cache: "no-store" });
       const json = await res.json();
@@ -134,7 +141,7 @@ export default function StyleAllocationsPage() {
 
   async function savePo(entryId) {
     try {
-      const poNumber = String(poEdits?.[entryId] || "").trim();
+      const poNumber = String(poEdits?.[entryId] || "").trim().toUpperCase(); // ✅ also upper here
       setSavingPoId(entryId);
 
       const res = await fetch(`/api/entries/${entryId}`, {
@@ -272,7 +279,9 @@ export default function StyleAllocationsPage() {
               onClick={bulkDeleteAllocations}
               disabled={!data?.counts?.allocatedCount}
               className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-extrabold ${
-                data?.counts?.allocatedCount ? "bg-rose-600 text-white hover:bg-rose-500" : "bg-slate-200 text-slate-500"
+                data?.counts?.allocatedCount
+                  ? "bg-rose-600 text-white hover:bg-rose-500"
+                  : "bg-slate-200 text-slate-500"
               }`}
               title="Delete all allocations in current results"
             >
@@ -291,9 +300,15 @@ export default function StyleAllocationsPage() {
             </select>
           </label>
 
+          {/* ✅ STYLE uppercase */}
           <label className="grid gap-1.5">
             <div className="text-xs font-bold text-slate-700">Style</div>
-            <input className="input" value={style} onChange={(e) => setStyle(e.target.value)} placeholder="e.g. 350836" />
+            <input
+              className="input"
+              value={style}
+              onChange={(e) => setStyle(upper(e.target.value))}
+              placeholder="e.g. 350836"
+            />
           </label>
 
           <label className="grid gap-1.5">
@@ -308,9 +323,15 @@ export default function StyleAllocationsPage() {
             </select>
           </label>
 
+          {/* ✅ COLOR uppercase */}
           <label className="grid gap-1.5">
             <div className="text-xs font-bold text-slate-700">Color</div>
-            <input className="input" value={color} onChange={(e) => setColor(e.target.value)} placeholder="All colors if empty" />
+            <input
+              className="input"
+              value={color}
+              onChange={(e) => setColor(upper(e.target.value))}
+              placeholder="All colors if empty"
+            />
           </label>
         </div>
 
@@ -325,13 +346,16 @@ export default function StyleAllocationsPage() {
           </div>
         )}
 
-        {err ? <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{err}</div> : null}
+        {err ? (
+          <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{err}</div>
+        ) : null}
 
         {data ? (
           <>
             <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm">
               <div className="font-extrabold text-slate-900">
-                Warehouse: {data.query.warehouse} • Style: {data.query.style} • Buyer: {data.query.buyer} • Color: {data.query.color}
+                Warehouse: {data.query.warehouse} • Style: {data.query.style} • Buyer: {data.query.buyer} • Color:{" "}
+                {data.query.color}
               </div>
               <div className="mt-1 text-xs text-slate-600">
                 Entries: <span className="font-bold">{data.counts.totalEntries}</span> • Allocated:{" "}
@@ -468,14 +492,18 @@ export default function StyleAllocationsPage() {
                           <input
                             className="input !w-[220px]"
                             value={poEdits?.[e._id] ?? ""}
-                            onChange={(ev) => setPoEdits((p) => ({ ...p, [e._id]: ev.target.value }))}
+                            onChange={(ev) =>
+                              setPoEdits((p) => ({ ...p, [e._id]: upper(ev.target.value) })) // ✅ uppercase PO typing too
+                            }
                             placeholder="PO number"
                           />
                           <button
                             onClick={() => savePo(e._id)}
                             disabled={savingPoId === e._id}
                             className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-extrabold ${
-                              savingPoId === e._id ? "bg-slate-200 text-slate-500" : "bg-slate-900 text-white hover:bg-slate-800"
+                              savingPoId === e._id
+                                ? "bg-slate-200 text-slate-500"
+                                : "bg-slate-900 text-white hover:bg-slate-800"
                             }`}
                           >
                             <Save className="h-4 w-4" />
@@ -503,7 +531,9 @@ export default function StyleAllocationsPage() {
                             Allocated: {e.alloc.rowName} • {e.alloc.rowStartAtCm} → {e.alloc.rowEndAtCm} cm
                           </div>
                         ) : (
-                          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">Not allocated</div>
+                          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
+                            Not allocated
+                          </div>
                         )}
                       </div>
                     </div>

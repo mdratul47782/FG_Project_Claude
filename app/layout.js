@@ -26,6 +26,11 @@ const poppins = Poppins({
 export const metadata = {
   title: "HKD FG APP",
   description: "CREATED BY MD.RATUL",
+  icons: {
+    icon: "/HKD_LOGO.png",          // or "/icon.png"
+    shortcut: "/HKD_LOGO.png",
+    apple: "/HKD_LOGO.png" // optional
+  }
 };
 
 export default async function RootLayout({ children }) {
